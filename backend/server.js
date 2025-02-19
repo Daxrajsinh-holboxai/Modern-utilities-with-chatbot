@@ -24,23 +24,6 @@ const OWNER_PHONE_NUMBER = process.env.OWNER_PHONE_NUMBER;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_secure_verify_token";
 const BACKEND_URL = process.env.BACKEND_URL; // Use the backend URL from the env
 
-// 🟢 Webhook Verification (For Meta API)
-app.get('/webhook', (req, res) => {
-  console.log("Received Webhook request:", req.query);
-  
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-      console.log("Webhook verified successfully!");
-      res.status(200).send(challenge); 
-  } else {
-      console.log("Invalid token or mode");
-      res.sendStatus(403);
-  }
-});
-
 // 🟢 Handle User Inquiry (Sends Message to WhatsApp)
 app.post("/send-message", async (req, res) => {
     const { name, phone, email, message } = req.body;
