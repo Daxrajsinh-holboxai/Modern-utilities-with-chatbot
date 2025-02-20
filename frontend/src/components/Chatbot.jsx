@@ -39,15 +39,25 @@ const Chatbot = () => {
     };
 
     const handleReply = async () => {
+        if (!replyMessage.trim()) {
+            alert("Please enter a reply message.");
+            return;
+        }
+    
         const replyData = {
             phone: user.phone,  // Send the user's phone to handle reply
             message: replyMessage, // The owner's reply message
         };
-        await axios.post(`${B_url}/send-reply`, replyData); // Handle reply in backend
-        setReplyMessage(""); // Clear reply field
+    
+        try {
+            const response = await axios.post(`${B_url}/send-reply`, replyData);
+            console.log("Reply sent successfully:", response.data);
+            setReplyMessage(""); // Clear reply field
+        } catch (error) {
+            console.error("Error sending reply:", error.response?.data || error.message);
+            alert("Failed to send reply. Please try again.");
+        }
     };
-    
-    
 
     return (
         <div>

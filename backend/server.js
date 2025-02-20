@@ -72,7 +72,14 @@ app.post("/send-reply", async (req, res) => {
         const userSession = userSessions.get(phone);
         
         if (!userSession) {
+            console.error("User session not found for phone:", phone);
             return res.status(400).json({ error: "User session not found" });
+        }
+
+        // Ensure the ownerMessageId is available
+        if (!userSession.ownerMessageId) {
+            console.error("Owner message ID not found for phone:", phone);
+            return res.status(400).json({ error: "Owner message ID not found" });
         }
 
         // Send message to the user's WhatsApp
@@ -84,13 +91,15 @@ app.post("/send-reply", async (req, res) => {
             context: { message_id: userSession.ownerMessageId } // Link to the original message
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
+        console.log("WhatsApp API response:", response.data);
+
         // Emit reply to frontend for the specific user
         io.emit(`reply-${phone}`, { sender: "owner", message });
 
         res.status(200).json({ success: true, message: "Reply sent successfully" });
     } catch (error) {
         console.error("Error sending WhatsApp reply:", error.response?.data || error.message);
-        res.status(500).json({ error: "Failed to send reply" });
+        res.status(500).json({ error: "Failed to send reply", details: error.response?.data || error.message });
     }
 });
 
