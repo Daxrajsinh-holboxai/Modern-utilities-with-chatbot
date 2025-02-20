@@ -14,6 +14,7 @@ const Chatbot = () => {
     const [selectedMessage, setSelectedMessage] = useState(null); // Track selected message for reply
     const [replyMessage, setReplyMessage] = useState(""); // Reply message state
 
+    // Listen for replies for the selected customer
     useEffect(() => {
         if (user.phone) {
             socket.emit("join", user.phone);
@@ -33,6 +34,7 @@ const Chatbot = () => {
     };
 
     const handleReply = async (messageId) => {
+        // Ensure you only send a reply for the selected message (specific customer)
         const replyData = {
             phone: user.phone,
             message: replyMessage,
@@ -102,7 +104,7 @@ const Chatbot = () => {
                                         <div 
                                             key={index} 
                                             className={`p-2 my-1 max-w-xs ${msg.sender === "user" ? "bg-blue-500 text-white ml-auto" : "bg-gray-200 text-gray-700"} rounded-md`}
-                                            onClick={() => setSelectedMessage(msg)}
+                                            onClick={() => setSelectedMessage(msg)} // Select the message
                                         >
                                             {msg.message}
                                         </div>

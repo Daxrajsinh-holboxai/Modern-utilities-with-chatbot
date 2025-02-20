@@ -80,6 +80,7 @@ app.post("/send-reply", async (req, res) => {
 });
 
 // 🟢 Webhook: Handle WhatsApp Messages (POST) - Receive replies from the owner
+// 🟢 Webhook: Handle WhatsApp Messages (POST) - Receive replies from the owner
 app.post("/webhook", async (req, res) => {
     const body_param = req.body;
     console.log("Received Webhook:", JSON.stringify(body_param, null, 2));
@@ -97,7 +98,7 @@ app.post("/webhook", async (req, res) => {
             if (userSessions.has(from)) {
                 userSessions.get(from).messages.push({ owner: msgBody });
 
-                // Send real-time message to chatbot frontend
+                // Send real-time message to chatbot frontend specific to the user
                 io.emit(`reply-${from}`, { sender: "owner", message: msgBody });
             }
         }
