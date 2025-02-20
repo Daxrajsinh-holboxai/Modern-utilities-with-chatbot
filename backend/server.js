@@ -68,10 +68,10 @@ app.post("/send-reply", async (req, res) => {
     }
 
     try {
-        // Send message to user's WhatsApp
+        // Send message to the owner's WhatsApp
         await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
-            to: phone,
+            to: OWNER_PHONE_NUMBER,  // Always send reply to the owner
             type: "text",
             text: { body: message },
             context: { message_id: messageId } // Include the original message ID in the context
@@ -82,7 +82,7 @@ app.post("/send-reply", async (req, res) => {
 
         res.status(200).json({ success: true, message: "Reply sent successfully" });
     } catch (error) {
-        console.error("Error sending WhatsApp reply:", error.response.data);
+        console.error("Error sending WhatsApp reply:", error.response?.data || error.message);
         res.status(500).json({ error: "Failed to send reply" });
     }
 });

@@ -40,12 +40,14 @@ const Chatbot = () => {
 
     const handleReply = async () => {
         const replyData = {
-            phone: user.phone,
+            phone: OWNER_PHONE_NUMBER, // Ensure this sends the owner's number
             message: replyMessage,
+            messageId: userSessions.get(user.phone).ownerMessageId // Pass the message ID for context
         };
         await axios.post(`${B_url}/send-reply`, replyData); // Handle reply in backend
         setReplyMessage(""); // Clear reply field
     };
+    
 
     return (
         <div>
