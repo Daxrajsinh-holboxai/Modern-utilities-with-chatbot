@@ -99,29 +99,29 @@ app.post("/webhook", async (req, res) => {
 
     if (body_param.object) {
         if (body_param.entry && body_param.entry[0].changes && body_param.entry[0].changes[0].value.messages) {
-            const phoneNoId = body_param.entry[0].changes[0].value.metadata.phone_number_id;
-            const from = body_param.entry[0].changes[0].value.messages[0].from;
-            const msgBody = body_param.entry[0].changes[0].value.messages[0].text.body;
-            const context = body_param.entry[0].changes[0].value.messages[0].context; // Get the context
-
+            const msgData = body_param.entry[0].changes[0].value.messages[0];
+            const context = msgData.context; // Get the context of the message
+            
             if (context) {
-                const originalMessageId = context.id; // Get the original message ID
+                const originalMessageId = context.id;  // Get the original message ID from context
+                const from = msgData.from;  // The phone number of the sender (customer)
 
-                // Find the customer associated with this message ID
+                // Find the customer session that matches the original message ID
                 let customerPhone = null;
                 for (let [phone, session] of userSessions.entries()) {
                     if (session.ownerMessageId === originalMessageId) {
-                        customerPhone = phone;
+                        customerPhone = phone;  // Found the matching customer
                         break;
                     }
                 }
 
                 if (customerPhone) {
                     // Add the owner's reply to the customer's session
-                    userSessions.get(customerPhone).messages.push({ owner: msgBody });
+                    userSessions.get(customerPhone).messages.push({ owner: msgData.text.body });
 
                     // Send real-time message to chatbot frontend specific to the user
-                    io.emit(`reply-${customerPhone}`, { sender: "owner", message: msgBody });
+                    io.emit(`reply-${customerPhone}`, { sender: "owner", message: msgData.text.body });
+
                 } else {
                     console.log("No customer found for this reply.");
                 }
@@ -133,6 +133,7 @@ app.post("/webhook", async (req, res) => {
 
     res.sendStatus(200); // Return a success response to acknowledge the webhook
 });
+
 
 // 🟢 Webhook Verification (GET Method)
 app.get("/webhook", (req, res) => {
