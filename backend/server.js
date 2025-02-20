@@ -68,17 +68,17 @@ app.post("/send-reply", async (req, res) => {
     }
 
     try {
-        // Send message to customer's WhatsApp (same logic as /send-message)
+        // Send message to owner's WhatsApp (not the customer's)
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
-            to: phone, // Send to customer's phone (ensure E.164 format)
+            to: OWNER_PHONE_NUMBER, // Send the reply to the owner's phone number
             type: "text",
-            text: { body: message }
+            text: { body: message } // The owner's reply message
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
         console.log("WhatsApp API response:", response.data);
 
-        // Emit reply to frontend
+        // Emit reply to frontend (specific to user)
         io.emit(`reply-${phone}`, { sender: "owner", message });
 
         res.status(200).json({ success: true, message: "Reply sent successfully" });
@@ -90,6 +90,7 @@ app.post("/send-reply", async (req, res) => {
         });
     }
 });
+
 
 // 🟢 Webhook: Handle WhatsApp Messages (POST) - Receive replies from the owner
 app.post("/webhook", async (req, res) => {
