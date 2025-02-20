@@ -32,17 +32,25 @@ app.post("/send-message", async (req, res) => {
         return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Store session
-    userSessions.set(phone, { name, email, phone, messages: [] });
-
     try {
         // Send message to owner's WhatsApp
-        await axios.post(WHATSAPP_API_URL, {
+        const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
             to: OWNER_PHONE_NUMBER,
             type: "text",
             text: { body: `New Inquiry:\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nMessage: ${message}` }
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
+
+        const ownerMessageId = response.data.messages[0].id;
+
+        // Store session with the owner's message ID
+        userSessions.set(phone, {
+            name,
+            email,
+            phone,
+            messages: [],
+            ownerMessageId, // Store the owner's message ID
+        });
 
         res.status(200).json({ success: true, message: "Message sent successfully" });
 
@@ -52,11 +60,10 @@ app.post("/send-message", async (req, res) => {
     }
 });
 
-// 🟢 Send Reply from Owner
 app.post("/send-reply", async (req, res) => {
     const { phone, message, messageId } = req.body;
 
-    if (!phone || !message) {
+    if (!phone || !message || !messageId) {
         return res.status(400).json({ error: "Missing required fields" });
     }
 
@@ -66,7 +73,8 @@ app.post("/send-reply", async (req, res) => {
             messaging_product: "whatsapp",
             to: phone,
             type: "text",
-            text: { body: message }
+            text: { body: message },
+            context: { message_id: messageId } // Include the original message ID in the context
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
         // Emit reply to frontend (specific to user)
@@ -80,35 +88,40 @@ app.post("/send-reply", async (req, res) => {
 });
 
 // 🟢 Webhook: Handle WhatsApp Messages (POST) - Receive replies from the owner
-// 🟢 Webhook: Handle WhatsApp Messages (POST) - Receive replies from the owner
 app.post("/webhook", async (req, res) => {
     const body_param = req.body;
     console.log("Received Webhook:", JSON.stringify(body_param, null, 2));
 
     if (body_param.object) {
         if (body_param.entry && body_param.entry[0].changes && body_param.entry[0].changes[0].value.messages) {
-            let phoneNoId = body_param.entry[0].changes[0].value.metadata.phone_number_id;
-            let from = body_param.entry[0].changes[0].value.messages[0].from;
-            let msgBody = body_param.entry[0].changes[0].value.messages[0].text.body;
+            const phoneNoId = body_param.entry[0].changes[0].value.metadata.phone_number_id;
+            const from = body_param.entry[0].changes[0].value.messages[0].from;
+            const msgBody = body_param.entry[0].changes[0].value.messages[0].text.body;
+            const context = body_param.entry[0].changes[0].value.messages[0].context; // Get the context
 
-            // Process the message and emit it to the frontend
-            console.log(`Received reply from: ${from}, message: ${msgBody}`);
-            console.log("existing usersessions:", userSessions)
-            console.log("Entries in userSessions map:");
-                for (let [key, value] of userSessions.entries()) {
-                    console.log(`Key: ${key}, Value: ${JSON.stringify(value)}`);
+            if (context) {
+                const originalMessageId = context.id; // Get the original message ID
+
+                // Find the customer associated with this message ID
+                let customerPhone = null;
+                for (let [phone, session] of userSessions.entries()) {
+                    if (session.ownerMessageId === originalMessageId) {
+                        customerPhone = phone;
+                        break;
+                    }
                 }
 
+                if (customerPhone) {
+                    // Add the owner's reply to the customer's session
+                    userSessions.get(customerPhone).messages.push({ owner: msgBody });
 
-            // Check if the user exists in session
-            if (userSessions.has(from)) {
-                console.log("condition is true")
-                userSessions.get(from).messages.push({ owner: msgBody });
-
-                // Send real-time message to chatbot frontend specific to the user
-                io.emit(`reply-${from}`, { sender: "owner", message: msgBody });
+                    // Send real-time message to chatbot frontend specific to the user
+                    io.emit(`reply-${customerPhone}`, { sender: "owner", message: msgBody });
+                } else {
+                    console.log("No customer found for this reply.");
+                }
             } else {
-                console.log("no sessions : (")
+                console.log("Owner sent a message without context. Please reply to a specific message.");
             }
         }
     }
