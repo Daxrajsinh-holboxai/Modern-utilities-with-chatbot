@@ -68,12 +68,12 @@ app.post("/send-reply", async (req, res) => {
     }
 
     try {
-        // Send message to the user's WhatsApp (no context needed)
+        // Send message to customer's WhatsApp (same logic as /send-message)
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
-            to: phone, // Ensure phone is in E.164 format (e.g., +1234567890)
+            to: phone, // Send to customer's phone (ensure E.164 format)
             type: "text",
-            text: { body: message } // Remove the context field
+            text: { body: message }
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
         console.log("WhatsApp API response:", response.data);
