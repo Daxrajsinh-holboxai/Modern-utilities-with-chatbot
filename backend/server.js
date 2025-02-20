@@ -94,8 +94,15 @@ app.post("/webhook", async (req, res) => {
             // Process the message and emit it to the frontend
             console.log(`Received reply from: ${from}, message: ${msgBody}`);
             console.log("existing usersessions:", userSessions)
+            console.log("Entries in userSessions map:");
+                for (let [key, value] of userSessions.entries()) {
+                    console.log(`Key: ${key}, Value: ${JSON.stringify(value)}`);
+                }
+
+
             // Check if the user exists in session
             if (userSessions.has(from)) {
+                console.log("condition is true")
                 userSessions.get(from).messages.push({ owner: msgBody });
 
                 // Send real-time message to chatbot frontend specific to the user
