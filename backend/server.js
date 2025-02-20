@@ -93,13 +93,15 @@ app.post("/webhook", async (req, res) => {
 
             // Process the message and emit it to the frontend
             console.log(`Received reply from: ${from}, message: ${msgBody}`);
-
+            console.log("existing usersessions:", userSessions)
             // Check if the user exists in session
             if (userSessions.has(from)) {
                 userSessions.get(from).messages.push({ owner: msgBody });
 
                 // Send real-time message to chatbot frontend specific to the user
                 io.emit(`reply-${from}`, { sender: "owner", message: msgBody });
+            } else {
+                console.log("no sessions : (")
             }
         }
     }

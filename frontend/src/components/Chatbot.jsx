@@ -11,18 +11,23 @@ const Chatbot = () => {
     const [chat, setChat] = useState([]);
     const [submitted, setSubmitted] = useState(false);
     const [isOpen, setIsOpen] = useState(false); 
-    const [selectedMessage, setSelectedMessage] = useState(null); // Track selected message for reply
     const [replyMessage, setReplyMessage] = useState(""); // Reply message state
 
-    // Listen for replies for the selected customer
+    // Listen for replies specific to the user's phone number
     useEffect(() => {
         if (user.phone) {
-            socket.emit("join", user.phone);
+            socket.emit("join", user.phone); // Join the WebSocket channel for the specific user
+            console.log(`Listening for reply-${user.phone}`);
             socket.on(`reply-${user.phone}`, (data) => {
+                console.log(`Received reply for ${user.phone}: `, data);
+                // Update chat with the owner's reply
                 setChat(prevChat => [...prevChat, { sender: "owner", message: data.message }]);
             });
 
-            return () => socket.off(`reply-${user.phone}`);
+            return () => {
+                console.log(`Unsubscribing from reply-${user.phone}`);
+                socket.off(`reply-${user.phone}`);
+            };
         }
     }, [user.phone]);
 
@@ -33,16 +38,13 @@ const Chatbot = () => {
         setSubmitted(true);
     };
 
-    const handleReply = async (messageId) => {
-        // Ensure you only send a reply for the selected message (specific customer)
+    const handleReply = async () => {
         const replyData = {
             phone: user.phone,
             message: replyMessage,
-            messageId,
         };
         await axios.post(`${B_url}/send-reply`, replyData); // Handle reply in backend
         setReplyMessage(""); // Clear reply field
-        setSelectedMessage(null); // Deselect message after replying
     };
 
     return (
@@ -104,28 +106,25 @@ const Chatbot = () => {
                                         <div 
                                             key={index} 
                                             className={`p-2 my-1 max-w-xs ${msg.sender === "user" ? "bg-blue-500 text-white ml-auto" : "bg-gray-200 text-gray-700"} rounded-md`}
-                                            onClick={() => setSelectedMessage(msg)} // Select the message
                                         >
                                             {msg.message}
                                         </div>
                                     ))}
                                 </div>
-                                {selectedMessage && (
-                                    <div className="mt-3">
-                                        <textarea
-                                            placeholder="Your reply..."
-                                            value={replyMessage}
-                                            onChange={(e) => setReplyMessage(e.target.value)}
-                                            className="w-full px-3 py-2 border rounded-md"
-                                        ></textarea>
-                                        <button 
-                                            onClick={() => handleReply(selectedMessage.messageId)} 
-                                            className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
-                                        >
-                                            Send Reply
-                                        </button>
-                                    </div>
-                                )}
+                                <div className="mt-3">
+                                    <textarea
+                                        placeholder="Your reply..."
+                                        value={replyMessage}
+                                        onChange={(e) => setReplyMessage(e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-md"
+                                    ></textarea>
+                                    <button 
+                                        onClick={handleReply} 
+                                        className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
+                                    >
+                                        Send Reply
+                                    </button>
+                                </div>
                                 <button 
                                     onClick={() => setSubmitted(false)} 
                                     className="w-full bg-gray-600 text-white py-2 rounded-md hover:bg-gray-700 transition"
