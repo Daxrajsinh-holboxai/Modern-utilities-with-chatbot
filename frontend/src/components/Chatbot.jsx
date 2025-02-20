@@ -3,7 +3,8 @@ import io from "socket.io-client";
 import axios from "axios";
 import { MessageCircle, X } from "lucide-react"; 
 
-const socket = io("http://localhost:5000");
+const B_url = import.meta.env.VITE_URL || "http://localhost:5000";
+const socket = io(B_url);
 
 const Chatbot = () => {
     const [user, setUser] = useState({ name: "", phone: "", email: "", message: "" });
@@ -26,7 +27,7 @@ const Chatbot = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        await axios.post("http://localhost:5000/send-message", user);
+        await axios.post(`${B_url}/send-message`, user);
         setChat([{ sender: "user", message: user.message }]);
         setSubmitted(true);
     };
@@ -37,7 +38,7 @@ const Chatbot = () => {
             message: replyMessage,
             messageId,
         };
-        await axios.post("http://localhost:5000/send-reply", replyData); // Handle reply in backend
+        await axios.post(`${B_url}/send-reply`, replyData); // Handle reply in backend
         setReplyMessage(""); // Clear reply field
         setSelectedMessage(null); // Deselect message after replying
     };
