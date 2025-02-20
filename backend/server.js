@@ -68,38 +68,26 @@ app.post("/send-reply", async (req, res) => {
     }
 
     try {
-        // Retrieve the session for the user
-        const userSession = userSessions.get(phone);
-        
-        if (!userSession) {
-            console.error("User session not found for phone:", phone);
-            return res.status(400).json({ error: "User session not found" });
-        }
-
-        // Ensure the ownerMessageId is available
-        if (!userSession.ownerMessageId) {
-            console.error("Owner message ID not found for phone:", phone);
-            return res.status(400).json({ error: "Owner message ID not found" });
-        }
-
-        // Send message to the user's WhatsApp
+        // Send message to the user's WhatsApp (no context needed)
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
-            to: phone,  // Send reply to the user's phone
+            to: phone, // Ensure phone is in E.164 format (e.g., +1234567890)
             type: "text",
-            text: { body: message },
-            context: { message_id: userSession.ownerMessageId } // Link to the original message
+            text: { body: message } // Remove the context field
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
         console.log("WhatsApp API response:", response.data);
 
-        // Emit reply to frontend for the specific user
+        // Emit reply to frontend
         io.emit(`reply-${phone}`, { sender: "owner", message });
 
         res.status(200).json({ success: true, message: "Reply sent successfully" });
     } catch (error) {
         console.error("Error sending WhatsApp reply:", error.response?.data || error.message);
-        res.status(500).json({ error: "Failed to send reply", details: error.response?.data || error.message });
+        res.status(500).json({ 
+            error: "Failed to send reply", 
+            details: error.response?.data || error.message 
+        });
     }
 });
 
