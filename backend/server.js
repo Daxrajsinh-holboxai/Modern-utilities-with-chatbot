@@ -54,44 +54,71 @@ app.post("/send-message", async (req, res) => {
 
 // 🟢 Send Reply from Owner
 app.post("/send-reply", async (req, res) => {
-  const { phone, message, messageId } = req.body;
+    const { phone, message, messageId } = req.body;
 
-  if (!phone || !message) {
-      return res.status(400).json({ error: "Missing required fields" });
-  }
+    if (!phone || !message) {
+        return res.status(400).json({ error: "Missing required fields" });
+    }
 
-  try {
-      // Send message to user's WhatsApp
-      await axios.post(WHATSAPP_API_URL, {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "text",
-          text: { body: message }
-      }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
+    try {
+        // Send message to user's WhatsApp
+        await axios.post(WHATSAPP_API_URL, {
+            messaging_product: "whatsapp",
+            to: phone,
+            type: "text",
+            text: { body: message }
+        }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
-      // Emit reply to frontend (specific to user)
-      io.emit(`reply-${phone}`, { sender: "owner", message });
+        // Emit reply to frontend (specific to user)
+        io.emit(`reply-${phone}`, { sender: "owner", message });
 
-      res.status(200).json({ success: true, message: "Reply sent successfully" });
-  } catch (error) {
-      console.error("Error sending WhatsApp reply:", error.response.data);
-      res.status(500).json({ error: "Failed to send reply" });
-  }
+        res.status(200).json({ success: true, message: "Reply sent successfully" });
+    } catch (error) {
+        console.error("Error sending WhatsApp reply:", error.response.data);
+        res.status(500).json({ error: "Failed to send reply" });
+    }
 });
 
-// 🟢 Webhook: Receive WhatsApp Replies from Owner
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+// 🟢 Webhook: Handle WhatsApp Messages (POST) - Receive replies from the owner
+app.post("/webhook", async (req, res) => {
+    const body_param = req.body;
+    console.log("Received Webhook:", JSON.stringify(body_param, null, 2));
 
-  // Check if the mode and token match what Meta expects
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-      console.log("Webhook verified successfully!");
-      res.status(200).send(challenge); // Respond with challenge to verify
-  } else {
-      res.sendStatus(403); // Unauthorized if token doesn't match
-  }
+    if (body_param.object) {
+        if (body_param.entry && body_param.entry[0].changes && body_param.entry[0].changes[0].value.messages) {
+            let phoneNoId = body_param.entry[0].changes[0].value.metadata.phone_number_id;
+            let from = body_param.entry[0].changes[0].value.messages[0].from;
+            let msgBody = body_param.entry[0].changes[0].value.messages[0].text.body;
+
+            // Process the message and emit it to the frontend
+            console.log(`Received reply from: ${from}, message: ${msgBody}`);
+
+            // Check if the user exists in session
+            if (userSessions.has(from)) {
+                userSessions.get(from).messages.push({ owner: msgBody });
+
+                // Send real-time message to chatbot frontend
+                io.emit(`reply-${from}`, { sender: "owner", message: msgBody });
+            }
+        }
+    }
+
+    res.sendStatus(200); // Return a success response to acknowledge the webhook
+});
+
+// 🟢 Webhook Verification (GET Method)
+app.get("/webhook", (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    // Check if the mode and token match what Meta expects
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+        console.log("Webhook verified successfully!");
+        res.status(200).send(challenge); // Respond with challenge to verify
+    } else {
+        res.sendStatus(403); // Unauthorized if token doesn't match
+    }
 });
 
 // 🟢 WebSocket for Real-Time Messaging
