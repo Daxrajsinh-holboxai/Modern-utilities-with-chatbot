@@ -41,7 +41,7 @@ app.post("/send-message", async (req, res) => {
             text: { body: `New Inquiry:\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nMessage: ${message}` }
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
-        const ownerMessageId = response.data.messages[0].id;
+        const ownerMessageId = response.data.messages[0].id;  // Capture the message ID
 
         // Store session with the owner's message ID
         userSessions.set(phone, {
@@ -61,23 +61,30 @@ app.post("/send-message", async (req, res) => {
 });
 
 app.post("/send-reply", async (req, res) => {
-    const { phone, message, messageId } = req.body;
+    const { phone, message } = req.body;
 
-    if (!phone || !message || !messageId) {
+    if (!phone || !message) {
         return res.status(400).json({ error: "Missing required fields" });
     }
 
     try {
-        // Send message to the owner's WhatsApp
-        await axios.post(WHATSAPP_API_URL, {
+        // Retrieve the session for the user
+        const userSession = userSessions.get(phone);
+        
+        if (!userSession) {
+            return res.status(400).json({ error: "User session not found" });
+        }
+
+        // Send message to the user's WhatsApp
+        const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
-            to: OWNER_PHONE_NUMBER,  // Always send reply to the owner
+            to: phone,  // Send reply to the user's phone
             type: "text",
             text: { body: message },
-            context: { message_id: messageId } // Include the original message ID in the context
+            context: { message_id: userSession.ownerMessageId } // Link to the original message
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
-        // Emit reply to frontend (specific to user)
+        // Emit reply to frontend for the specific user
         io.emit(`reply-${phone}`, { sender: "owner", message });
 
         res.status(200).json({ success: true, message: "Reply sent successfully" });
