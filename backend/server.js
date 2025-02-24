@@ -5,6 +5,7 @@ const socketIo = require("socket.io");
 const axios = require("axios");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
@@ -14,7 +15,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(cors());
 
-// Store chat sessions
+// Store chat sessions with session IDs
 const userSessions = new Map();
 
 // WhatsApp API Config
@@ -22,40 +23,44 @@ const WHATSAPP_API_URL = process.env.WHATSAPP_API_URL;
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 const OWNER_PHONE_NUMBER = process.env.OWNER_PHONE_NUMBER;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_secure_verify_token";
-const BACKEND_URL = process.env.BACKEND_URL; // Use the backend URL from the env
+const BACKEND_URL = process.env.BACKEND_URL;
 
-// 🟢 Handle User Inquiry (Sends Message to WhatsApp)
+// Generate or retrieve session ID
+app.post("/start-session", (req, res) => {
+    const sessionId = uuidv4();
+    userSessions.set(sessionId, {
+        messages: [],
+        ownerMessageId: null
+    });
+    res.status(200).json({ sessionId });
+});
+
+// Handle customer messages
 app.post("/send-message", async (req, res) => {
-    const { name, phone, email, message } = req.body;
+    const { sessionId, message } = req.body;
 
-    if (!name || !phone || !message) {
+    if (!sessionId || !message) {
         return res.status(400).json({ error: "Missing required fields" });
     }
 
     try {
+        const session = userSessions.get(sessionId);
+        if (!session) return res.status(404).json({ error: "Session not found" });
+
         // Send message to owner's WhatsApp
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
             to: OWNER_PHONE_NUMBER,
             type: "text",
-            text: { body: `New Inquiry:\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nMessage: ${message}` }
+            text: { body: `New Message:\n${message}` }
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
-        const ownerMessageId = response.data.messages[0].id;  // Capture the message ID
-
-        // Store session with the owner's message ID
-        userSessions.set(phone, {
-            name,
-            email,
-            phone,
-            messages: [],
-            ownerMessageId, // Store the owner's message ID
-        });
-
-        res.status(200).json({ success: true, message: "Message sent successfully" });
-
+        session.ownerMessageId = response.data.messages[0].id;
+        session.messages.push({ sender: "user", message });
+        
+        res.status(200).json({ success: true });
     } catch (error) {
-        console.error("Error sending WhatsApp message:", error.response?.data || error.message);
+        console.error("Error sending message:", error.response?.data || error.message);
         res.status(500).json({ error: "Failed to send message" });
     }
 });
@@ -92,46 +97,34 @@ app.post("/send-reply", async (req, res) => {
 });
 
 
-// 🟢 Webhook: Handle WhatsApp Messages (POST) - Receive replies from the owner
+// Handle owner replies
 app.post("/webhook", async (req, res) => {
-    const body_param = req.body;
-    console.log("Received Webhook:", JSON.stringify(body_param, null, 2));
+    const body = req.body;
+    
+    if (body.object && body.entry?.[0]?.changes?.[0]?.value?.messages) {
+        const msgData = body.entry[0].changes[0].value.messages[0];
+        const context = msgData.context;
 
-    if (body_param.object) {
-        if (body_param.entry && body_param.entry[0].changes && body_param.entry[0].changes[0].value.messages) {
-            const msgData = body_param.entry[0].changes[0].value.messages[0];
-            const context = msgData.context; // Get the context of the message
+        if (context) {
+            const originalMessageId = context.id;
             
-            if (context) {
-                const originalMessageId = context.id;  // Get the original message ID from context
-                const from = msgData.from;  // The phone number of the sender (customer)
-
-                // Find the customer session that matches the original message ID
-                let customerPhone = null;
-                for (let [phone, session] of userSessions.entries()) {
-                    if (session.ownerMessageId === originalMessageId) {
-                        customerPhone = phone;  // Found the matching customer
-                        break;
-                    }
+            // Find session by original message ID
+            let targetSessionId = null;
+            for (const [sessionId, session] of userSessions.entries()) {
+                if (session.ownerMessageId === originalMessageId) {
+                    targetSessionId = sessionId;
+                    break;
                 }
+            }
 
-                if (customerPhone) {
-                    // Add the owner's reply to the customer's session
-                    userSessions.get(customerPhone).messages.push({ owner: msgData.text.body });
-
-                    // Send real-time message to chatbot frontend specific to the user
-                    io.emit(`reply-${customerPhone}`, { sender: "owner", message: msgData.text.body });
-
-                } else {
-                    console.log("No customer found for this reply.");
-                }
-            } else {
-                console.log("Owner sent a message without context. Please reply to a specific message.");
+            if (targetSessionId) {
+                const replyMessage = msgData.text.body;
+                userSessions.get(targetSessionId).messages.push({ sender: "owner", message: replyMessage });
+                io.emit(`reply-${targetSessionId}`, { message: replyMessage });
             }
         }
     }
-
-    res.sendStatus(200); // Return a success response to acknowledge the webhook
+    res.sendStatus(200);
 });
 
 
