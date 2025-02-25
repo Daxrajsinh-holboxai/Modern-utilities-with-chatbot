@@ -1,189 +1,146 @@
+// Chatbot.jsx
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import axios from "axios";
 import { MessageCircle, X, Send } from "lucide-react";
-import notificationSound from "../assets/notification.mp3";
+import { v4 as uuidv4 } from "uuid";
 
 const B_url = import.meta.env.VITE_URL || "http://localhost:5000";
 const socket = io(B_url);
 
-// Three dots loading animation component
-const ThreeDotsLoader = () => (
-    <div className="flex space-x-1">
-        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
-        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }}></div>
-    </div>
-);
-
 const Chatbot = () => {
-    const [sessionId, setSessionId] = useState(localStorage.getItem("sessionId") || "");
-    const [chat, setChat] = useState(
-        JSON.parse(localStorage.getItem("chat")) || [
-            { sender: "bot", message: "Hi there! How can I assist you today?" }
-        ]
-    );
-    const [message, setMessage] = useState("");
-    const [isOpen, setIsOpen] = useState(false);
-    const [isSending, setIsSending] = useState(false);
-    const [awaitingReply, setAwaitingReply] = useState(false);
-    const chatEndRef = useRef(null);
-    const audioRef = useRef(new Audio(notificationSound));
-    const messageIds = useRef(new Set());
+  const [sessionId, setSessionId] = useState(localStorage.getItem("sessionId") || "");
+  const [chat, setChat] = useState(
+    JSON.parse(localStorage.getItem("chat")) || [
+      { sender: "bot", message: "Hi there! How can I assist you today?" },
+    ]
+  );
+  const [message, setMessage] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const chatEndRef = useRef(null);
 
-    useEffect(() => {
-        if (!sessionId) {
-            axios.post(`${B_url}/start-session`)
-                .then(res => {
-                    const newSessionId = res.data.sessionId;
-                    setSessionId(newSessionId);
-                    localStorage.setItem("sessionId", newSessionId);
-                })
-                .catch(err => console.error("Error starting session:", err));
-        } else {
-            const eventName = `reply-${sessionId}`;
-            
-            socket.emit("join", sessionId);
-            socket.on(eventName, (data) => {
-                if (!messageIds.current.has(data.messageId)) {
-                    messageIds.current.add(data.messageId);
-                    setChat(prev => [...prev, { 
-                        sender: "owner", 
-                        message: data.message,
-                        id: data.messageId 
-                    }]);
-                    setAwaitingReply(false);
-                    playSound();
-                }
-            });
+  useEffect(() => {
+    if (!sessionId) {
+      axios.post(`${B_url}/start-session`).then((res) => {
+        const newSessionId = res.data.sessionId;
+        setSessionId(newSessionId);
+        localStorage.setItem("sessionId", newSessionId);
+      });
+    } else {
+      socket.emit("join", sessionId);
+      socket.on(`reply-${sessionId}`, (data) => {
+        setChat((prev) => [...prev, { sender: "owner", message: data.message }]);
+      });
+    }
+  }, [sessionId]);
 
-            return () => {
-                socket.off(eventName);
-                messageIds.current.clear();
-            };
-        }
-    }, [sessionId]);
+  useEffect(() => {
+    localStorage.setItem("chat", JSON.stringify(chat));
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat]);
 
-    useEffect(() => {
-        localStorage.setItem("chat", JSON.stringify(chat));
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [chat]);
+  const handleSend = async () => {
+    if (!message.trim()) return;
 
-    const playSound = () => {
-        audioRef.current.play();
-    };
+    try {
+      await axios.post(`${B_url}/send-message`, { sessionId, message });
+      setChat((prev) => [...prev, { sender: "user", message }]);
+      setMessage("");
+    } catch (error) {
+      console.error("Error sending message:", error);
+    }
+  };
 
-    const handleSend = async () => {
-        if (!message.trim() || isSending) return;
+  const clearSession = () => {
+    localStorage.removeItem("sessionId");
+    localStorage.removeItem("chat");
+    setSessionId("");
+    setChat([{ sender: "bot", message: "Hi there! How can I assist you today?" }]);
+  };
 
-        setIsSending(true);
-        try {
-            const response = await axios.post(`${B_url}/send-message`, { sessionId, message });
-            const messageId = response.data.messageId;
-            
-            setChat(prev => [...prev, { 
-                sender: "user", 
-                message,
-                id: messageId
-            }]);
-            messageIds.current.add(messageId);
-            setMessage("");
-            setAwaitingReply(true);
-            playSound();
-        } catch (error) {
-            console.error("Error sending message:", error);
-        } finally {
-            setIsSending(false);
-        }
-    };
+  // Utility function to style messages differently based on sender
+  const getMessageClasses = (sender) => {
+    if (sender === "user") {
+      return "bg-blue-100 self-end text-blue-900";
+    } else if (sender === "owner") {
+      return "bg-green-100 self-start text-green-900";
+    }
+    // default (bot)
+    return "bg-gray-100 self-start text-gray-900";
+  };
 
-    const clearSession = () => {
-        localStorage.removeItem("sessionId");
-        localStorage.removeItem("chat");
-        setSessionId("");
-        setChat([{ sender: "bot", message: "Hi there! How can I assist you today?" }]);
-        setAwaitingReply(false);
-        messageIds.current.clear();
-    };
+  return (
+    <div className="fixed bottom-4 right-4 flex flex-col items-end">
+      {/* Floating button to open chat */}
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="flex items-center justify-center w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg focus:outline-none"
+        >
+          <MessageCircle size={28} />
+        </button>
+      )}
 
-    return (
-        <div>
-            {/* Chatbot Toggle Button */}
-            {!isOpen && (
-                <button 
-                    onClick={() => setIsOpen(true)} 
-                    className="fixed bottom-5 right-5 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition"
-                >
-                    <MessageCircle size={28} />
-                </button>
-            )}
+      {/* Chat window */}
+      {isOpen && (
+        <div className="flex flex-col w-80 max-w-full h-96 bg-white border border-gray-300 rounded-md shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between bg-blue-600 text-white px-4 py-2">
+            <h2 className="font-bold text-lg">Chat Support</h2>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="text-white focus:outline-none"
+            >
+              <X size={22} />
+            </button>
+          </div>
 
-            {/* Chatbox UI */}
-            {isOpen && (
-                <div className="fixed bottom-5 right-5 w-80 sm:w-96 bg-white border border-gray-300 rounded-lg shadow-lg h-[500px] flex flex-col">
-                    {/* Header */}
-                    <div className="flex items-center justify-between bg-blue-600 text-white p-3 rounded-t-lg">
-                        <h2 className="text-lg font-semibold">Chat Support</h2>
-                        <button onClick={() => setIsOpen(false)} className="text-white hover:text-gray-300">
-                            <X size={22} />
-                        </button>
-                    </div>
+          {/* Messages area */}
+          <div className="flex-1 flex flex-col space-y-2 p-3 overflow-y-auto">
+            {chat.map((msg, i) => (
+              <div
+                key={i}
+                className={`px-3 py-2 max-w-xs rounded-md text-sm break-words ${getMessageClasses(
+                  msg.sender
+                )}`}
+              >
+                {msg.message}
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
 
-                    {/* Chat Messages */}
-                    <div className="flex-1 p-3 overflow-y-auto">
-                        {chat.map((msg) => (
-                            <div key={msg.id} className={`p-2 my-1 max-w-[75%] ${msg.sender === "user" ? "bg-blue-500 text-white ml-auto rounded-br-lg rounded-tl-lg rounded-bl-lg" : "bg-gray-200 text-gray-700 mr-auto rounded-bl-lg rounded-tr-lg rounded-br-lg"}`}>
-                                {msg.message}
-                            </div>
-                        ))}
-                        {awaitingReply && (
-                            <div className="p-2 my-1 max-w-[75%] bg-gray-200 text-gray-700 mr-auto rounded-bl-lg rounded-tr-lg rounded-br-lg">
-                                <div className="flex items-center justify-between">
-                                    <span>Waiting for response</span>
-                                    <ThreeDotsLoader />
-                                </div>
-                            </div>
-                        )}
-                        <div ref={chatEndRef}></div>
-                    </div>
+          {/* Input area */}
+          <div className="border-t border-gray-200 p-2 flex items-center space-x-2">
+            <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Type your message..."
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <button
+              onClick={handleSend}
+              className="bg-blue-600 text-white p-2 rounded focus:outline-none"
+            >
+              <Send size={18} />
+            </button>
+          </div>
 
-                    {/* Message Input */}
-                    <div className="p-3 border-t border-gray-300 flex items-center">
-                        <input
-                            type="text"
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            placeholder="Type your message..."
-                            className="w-full px-3 py-2 border rounded-md focus:ring focus:ring-blue-300"
-                            onKeyPress={(e) => e.key === "Enter" && handleSend()}
-                            disabled={isSending}
-                        />
-                        <button 
-                            onClick={handleSend} 
-                            className="ml-2 bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition relative"
-                            disabled={isSending}
-                        >
-                            {isSending ? (
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                                <Send size={18} />
-                            )}
-                        </button>
-                    </div>
-
-                    {/* Clear Chat Button */}
-                    <div className="p-3">
-                        <button 
-                            onClick={clearSession} 
-                            className="border border-red-500 text-red-500 px-3 py-1 text-sm rounded-md hover:bg-red-500 hover:text-white transition"
-                        >
-                            Clear Chat
-                        </button>
-                    </div>
-                </div>
-            )}
+          {/* Clear chat button on the left */}
+          <div className="p-2 border-t border-gray-200 bg-gray-50 flex justify-start">
+            <button
+              onClick={clearSession}
+              className="bg-transparent text-red-500 border border-red-500 
+                         px-3 py-1 text-sm rounded-md w-32"
+            >
+              Clear Chat History
+            </button>
+          </div>
         </div>
-    );
+      )}
+    </div>
+  );
 };
 
 export default Chatbot;
