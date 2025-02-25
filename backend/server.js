@@ -35,7 +35,7 @@ app.post("/start-session", (req, res) => {
     res.status(200).json({ sessionId });
 });
 
-// Handle customer messages
+// Modify /send-message endpoint
 app.post("/send-message", async (req, res) => {
     const { sessionId, message } = req.body;
 
@@ -55,10 +55,17 @@ app.post("/send-message", async (req, res) => {
             text: { body: `New Message:\n${message}` }
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
-        session.ownerMessageId = response.data.messages[0].id;
-        session.messages.push({ sender: "user", message });
-        
-        res.status(200).json({ success: true });
+        const ownerMessageId = response.data.messages[0].id;
+        const messageId = uuidv4(); // Generate unique message ID
+
+        session.ownerMessageId = ownerMessageId;
+        session.messages.push({ 
+            sender: "user", 
+            message,
+            id: messageId // Add message ID
+        });
+
+        res.status(200).json({ success: true, messageId }); // Return message ID to frontend
     } catch (error) {
         console.error("Error sending message:", error.response?.data || error.message);
         res.status(500).json({ error: "Failed to send message" });
@@ -98,6 +105,7 @@ app.post("/send-reply", async (req, res) => {
 
 
 // Handle owner replies
+// Modify /webhook endpoint
 app.post("/webhook", async (req, res) => {
     const body = req.body;
     
@@ -119,8 +127,20 @@ app.post("/webhook", async (req, res) => {
 
             if (targetSessionId) {
                 const replyMessage = msgData.text.body;
-                userSessions.get(targetSessionId).messages.push({ sender: "owner", message: replyMessage });
-                io.emit(`reply-${targetSessionId}`, { message: replyMessage });
+                const messageId = uuidv4(); // Generate unique message ID
+
+                // Add message ID to prevent duplicates
+                userSessions.get(targetSessionId).messages.push({ 
+                    sender: "owner", 
+                    message: replyMessage,
+                    id: messageId 
+                });
+
+                // Emit reply to frontend with message ID
+                io.to(targetSessionId).emit(`reply-${targetSessionId}`, { 
+                    message: replyMessage,
+                    messageId 
+                });
             }
         }
     }
@@ -144,11 +164,13 @@ app.get("/webhook", (req, res) => {
 });
 
 // 🟢 WebSocket for Real-Time Messaging
+// Update WebSocket connection logic
 io.on("connection", (socket) => {
     console.log("WebSocket connected");
 
-    socket.on("join", (phone) => {
-        console.log(`User connected: ${phone}`);
+    socket.on("join", (sessionId) => {
+        console.log(`User joined session: ${sessionId}`);
+        socket.join(sessionId); // Join the session room
     });
 
     socket.on("disconnect", () => {
