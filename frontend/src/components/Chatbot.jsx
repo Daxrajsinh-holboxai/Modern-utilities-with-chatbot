@@ -1,9 +1,7 @@
-// Chatbot.jsx
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import axios from "axios";
 import { MessageCircle, X, Send } from "lucide-react";
-import { v4 as uuidv4 } from "uuid";
 
 const B_url = import.meta.env.VITE_URL || "http://localhost:5000";
 const socket = io(B_url);
@@ -18,6 +16,7 @@ const Chatbot = () => {
   const [message, setMessage] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const chatEndRef = useRef(null);
+  const [receivedMessages, setReceivedMessages] = useState(new Set());
 
   useEffect(() => {
     if (!sessionId) {
@@ -28,12 +27,23 @@ const Chatbot = () => {
       });
     } else {
       socket.emit("join", sessionId);
-      socket.on(`reply-${sessionId}`, (data) => {
-        setChat((prev) => [...prev, { sender: "owner", message: data.message }]);
-      });
+
+      // Listen for messages from the server
+      const handleReply = (data) => {
+        if (!receivedMessages.has(data.message)) {
+          setChat((prev) => [...prev, { sender: "owner", message: data.message }]);
+          setReceivedMessages((prev) => new Set(prev.add(data.message)));
+        }
+      };
+
+      socket.on(`reply-${sessionId}`, handleReply);
+
+      // Cleanup function to remove the event listener
+      return () => {
+        socket.off(`reply-${sessionId}`, handleReply);
+      };
     }
   }, [sessionId]);
-
   useEffect(() => {
     localStorage.setItem("chat", JSON.stringify(chat));
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -56,6 +66,7 @@ const Chatbot = () => {
     localStorage.removeItem("chat");
     setSessionId("");
     setChat([{ sender: "bot", message: "Hi there! How can I assist you today?" }]);
+    setReceivedMessages(new Set()); // Reset the receivedMessages set when clearing the session
   };
 
   // Utility function to style messages differently based on sender

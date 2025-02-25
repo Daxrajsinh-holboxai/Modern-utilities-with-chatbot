@@ -56,6 +56,9 @@ app.post("/send-message", async (req, res) => {
             text: { body: `New Message:\n${message}` }
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
+        // Debug: Print the response from WhatsApp API
+        console.log("WhatsApp API Response:", response.data);
+
         session.ownerMessageId = response.data.messages[0].id;
         session.messages.push({ sender: "user", message });
         
@@ -65,6 +68,7 @@ app.post("/send-message", async (req, res) => {
         res.status(500).json({ error: "Failed to send message" });
     }
 });
+
 
 // Handle owner replies
 app.post("/webhook", async (req, res) => {
