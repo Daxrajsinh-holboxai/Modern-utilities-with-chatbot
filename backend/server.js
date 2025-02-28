@@ -163,7 +163,7 @@ app.post("/webhook", async (req, res) => {
                                     const session = userSessions.get(targetSessionId);
                                     const replyData = {
                                         id: uuidv4(),
-                                        content: replyMessage,
+                                        message: replyMessage,
                                         timestamp: new Date(),
                                         status: "delivered",
                                         customerId: session.customerId,
