@@ -18,6 +18,8 @@ app.use(cors());
 // Store chat sessions with additional metadata
 const userSessions = new Map();
 
+let customerCounter = 1;
+
 // WhatsApp API Config
 const WHATSAPP_API_URL = process.env.WHATSAPP_API_URL;
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
@@ -28,7 +30,8 @@ const BACKEND_URL = process.env.BACKEND_URL;
 // Generate session with customer identification
 app.post("/start-session", (req, res) => {
     const sessionId = uuidv4();
-    const customerId = `CUST-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // const customerId = `CUST-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const customerId = `cust${customerCounter++}`;
     
     userSessions.set(sessionId, {
         customerId,

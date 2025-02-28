@@ -196,11 +196,11 @@ const Chatbot: React.FC = () => {
                                     className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(msg.sender)}`}
                                 >
                                     {msg.message}
-                                    {msg.sender === "user" && (
+                                    {/* {msg.sender === "user" && (
                                         <div className="text-xs text-gray-200 mt-1">
                                             Status: {msg.status || "sent"}
                                         </div>
-                                    )}
+                                    )} */}
                                 </motion.div>
                             ))}
                             {awaitingReply && (
