@@ -1,4 +1,3 @@
-// Backend modifications
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
@@ -104,7 +103,23 @@ app.post("/send-message", async (req, res) => {
     }
 });
 
-// Enhanced webhook handler with delivery status
+// Webhook verification (GET method)
+app.get("/webhook", (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    // Check if the mode and token match what Meta expects
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+        console.log("[WEBHOOK] Verification successful");
+        res.status(200).send(challenge); // Respond with challenge to verify
+    } else {
+        console.warn("[WEBHOOK] Verification failed: Invalid token or mode");
+        res.sendStatus(403); // Unauthorized if token doesn't match
+    }
+});
+
+// Enhanced webhook handler with delivery status (POST method)
 app.post("/webhook", async (req, res) => {
     const body = req.body;
     console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
