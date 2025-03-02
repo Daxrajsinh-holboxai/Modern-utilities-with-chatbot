@@ -147,7 +147,7 @@ const Chatbot: React.FC = () => {
             case "user":
                 return "bg-gradient-to-r from-green-500 to-green-600 text-white self-end";
             case "owner":
-                return "bg-gradient-to-r from-green-300 to-green-500 text-white self-start";
+                return "bg-gray-700 text-white self-start";
             default:
                 return "bg-gray-700 text-white self-start";
         }
