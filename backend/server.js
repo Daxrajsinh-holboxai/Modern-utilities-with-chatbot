@@ -36,7 +36,8 @@ app.post("/start-session", (req, res) => {
     userSessions.set(sessionId, {
         customerId,
         messages: [],
-        ownerMessageId: null,
+        // ownerMessageId: null,
+        messageContexts: new Map(),
         status: "active",
         createdAt: new Date(),
         lastActivity: new Date()
@@ -84,7 +85,11 @@ app.post("/send-message", async (req, res) => {
             sessionId
         };
 
-        session.ownerMessageId = messageData.id;
+        // session.ownerMessageId = messageData.id;
+        session.messageContexts.set(messageData.id, {
+            originalMessage: message,
+            timestamp: new Date()
+        });
         session.messages.push(messageData);
         session.lastActivity = new Date();
 
@@ -153,7 +158,7 @@ app.post("/webhook", async (req, res) => {
                                 
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
-                                    if (session.ownerMessageId === originalMessageId) {
+                                    if (session.messageContexts.has(originalMessageId)) {
                                         targetSessionId = sessionId;
                                         break;
                                     }
@@ -172,6 +177,7 @@ app.post("/webhook", async (req, res) => {
 
                                     session.messages.push(replyData);
                                     session.lastActivity = new Date();
+                                    session.messageContexts.delete(originalMessageId);
 
                                     console.log(`[ROUTING] Sending reply to session ${targetSessionId} (${session.customerId})`);
                                     io.to(targetSessionId).emit(`reply-${targetSessionId}`, replyData);
