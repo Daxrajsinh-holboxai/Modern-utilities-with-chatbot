@@ -14,6 +14,15 @@ const io = socketIo(server, { cors: { origin: "*" } });
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cors());
+// Add this before your send-message endpoint
+app.use((req, res, next) => {
+    const usNumberPattern = /^1\d{10}$/;
+    if (!usNumberPattern.test(OWNER_PHONE_NUMBER)) {
+        console.error("[VALIDATION] Invalid US number format");
+        return res.status(400).json({ error: "Invalid US number configuration" });
+    }
+    next();
+});
 
 // Store chat sessions with additional metadata
 const userSessions = new Map();
@@ -102,25 +111,30 @@ app.post("/send-message", async (req, res) => {
         console.error(`[ERROR] Failed to send message: ${error.response?.data || error.message}`);
 
         // Handle "Re-engagement message" error (error code 131047)
-        if (error.response?.data?.error?.code === 131047) {
+        if (error.response?.data?.errors?.[0]?.code === 131047) {
             console.log("[TEMPLATE] Attempting to send re-engagement template...");
 
             try {
                 // Step 1: Send the template message
-                const templateResponse = await axios.post(WHATSAPP_API_URL, {
-                    messaging_product: "whatsapp",
-                    to: OWNER_PHONE_NUMBER,
-                    type: "template",
-                    template: {
-                        name: "hello_world", // Use WhatsApp's default approved template
-                        language: { code: "en_US" }
-                    }
-                }, { 
-                    headers: { 
-                        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json"
-                    } 
-                });
+                // Modify template sending to include US-specific parameters
+const templateResponse = await axios.post(WHATSAPP_API_URL, {
+    messaging_product: "whatsapp",
+    to: OWNER_PHONE_NUMBER,
+    type: "template",
+    template: {
+        name: "hello_world",
+        language: { code: "en_US" },
+        components: [{
+            type: "body",
+            parameters: [{ type: "text", text: session.customerId }]
+        }]
+    }
+}, {
+    headers: {
+        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        "X-US-Number": "true" // Custom header for US handling
+    }
+});
 
                 console.log("[TEMPLATE] Template sent successfully: ", templateResponse.data);
 
@@ -213,7 +227,7 @@ app.post("/webhook", async (req, res) => {
                                     console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
 
                                     // Check for 24-hour policy error
-                                    if (status.status === "failed" && status.errors?.[0]?.code === 131047) {
+                                    if (error.response?.data?.errors?.[0]?.code === 131047) {
                                         console.log(`[TEMPLATE] Detected 24-hour policy error for message ${status.id}`);
 
                                         // Find the session associated with this message
@@ -230,20 +244,25 @@ app.post("/webhook", async (req, res) => {
 
                                             // Send template message
                                             try {
-                                                const templateResponse = await axios.post(WHATSAPP_API_URL, {
-                                                    messaging_product: "whatsapp",
-                                                    to: OWNER_PHONE_NUMBER,
-                                                    type: "template",
-                                                    template: {
-                                                        name: "hello_world", // Use WhatsApp's default approved template
-                                                        language: { code: "en_US" }
-                                                    }
-                                                }, { 
-                                                    headers: { 
-                                                        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                                                        "Content-Type": "application/json"
-                                                    } 
-                                                });
+                                                // Modify template sending to include US-specific parameters
+const templateResponse = await axios.post(WHATSAPP_API_URL, {
+    messaging_product: "whatsapp",
+    to: OWNER_PHONE_NUMBER,
+    type: "template",
+    template: {
+        name: "hello_world",
+        language: { code: "en_US" },
+        components: [{
+            type: "body",
+            parameters: [{ type: "text", text: session.customerId }]
+        }]
+    }
+}, {
+    headers: {
+        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        "X-US-Number": "true" // Custom header for US handling
+    }
+});
 
                                                 console.log(`[TEMPLATE] Template message sent successfully: ${templateResponse.data.messages[0].id}`);
 
@@ -265,7 +284,7 @@ app.post("/webhook", async (req, res) => {
                                                     }, { 
                                                         headers: { 
                                                             Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                                                            "X-Debug-Session": sessionId
+                                                            "X-Debug-Session": targetSessionId 
                                                         } 
                                                     });
 
