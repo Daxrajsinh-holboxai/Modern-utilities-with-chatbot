@@ -14,15 +14,6 @@ const io = socketIo(server, { cors: { origin: "*" } });
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cors());
-// Add this before your send-message endpoint
-app.use((req, res, next) => {
-    const usNumberPattern = /^1\d{10}$/;
-    if (!usNumberPattern.test(OWNER_PHONE_NUMBER)) {
-        console.error("[VALIDATION] Invalid US number format");
-        return res.status(400).json({ error: "Invalid US number configuration" });
-    }
-    next();
-});
 
 // Store chat sessions with additional metadata
 const userSessions = new Map();
@@ -115,6 +106,7 @@ app.post("/send-message", async (req, res) => {
             console.log("[TEMPLATE] Attempting to send re-engagement template...");
 
             try {
+                const session = userSessions.get(targetSessionId);
                 // Step 1: Send the template message
                 // Modify template sending to include US-specific parameters
 const templateResponse = await axios.post(WHATSAPP_API_URL, {
@@ -132,7 +124,6 @@ const templateResponse = await axios.post(WHATSAPP_API_URL, {
 }, {
     headers: {
         Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-        "X-US-Number": "true" // Custom header for US handling
     }
 });
 
@@ -260,7 +251,6 @@ const templateResponse = await axios.post(WHATSAPP_API_URL, {
 }, {
     headers: {
         Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-        "X-US-Number": "true" // Custom header for US handling
     }
 });
 
