@@ -194,6 +194,7 @@ app.get("/webhook", (req, res) => {
 });
 
 // Enhanced webhook handler with delivery status (POST method)
+// Enhanced webhook handler with delivery status
 app.post("/webhook", async (req, res) => {
     const body = req.body;
     console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
@@ -202,19 +203,73 @@ app.post("/webhook", async (req, res) => {
         if (body.object && body.entry) {
             for (const entry of body.entry) {
                 for (const change of entry.changes) {
+                    const statuses = change.value.statuses;
+
+                    if (statuses) {
+                        for (const status of statuses) {
+                            console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
+
+                            // If message failed due to 24-hour rule, send a template message
+                            if (status.status === "failed" && status.errors) {
+                                for (const error of status.errors) {
+                                    if (error.code === 131047) {
+                                        console.log(`[RE-ENGAGE] Error 131047 detected for message ${status.id}, sending template...`);
+
+                                        try {
+                                            const templateResponse = await axios.post(WHATSAPP_API_URL, {
+                                                messaging_product: "whatsapp",
+                                                to: status.recipient_id,
+                                                type: "template",
+                                                template: {
+                                                    name: "initial_contact", // Ensure this template is approved in Meta Business Manager
+                                                    language: { code: "en_US" }
+                                                }
+                                            }, { 
+                                                headers: { 
+                                                    Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                                                    "Content-Type": "application/json"
+                                                } 
+                                            });
+
+                                            console.log(`[TEMPLATE] Sent successfully: `, templateResponse.data);
+
+                                            // Step 2: Wait 3 seconds before retrying the original message
+                                            setTimeout(async () => {
+                                                try {
+                                                    console.log(`[RETRY] Retrying failed message ${status.id} after sending template...`);
+
+                                                    const retryResponse = await axios.post(WHATSAPP_API_URL, {
+                                                        messaging_product: "whatsapp",
+                                                        to: status.recipient_id,
+                                                        type: "text",
+                                                        text: { body: "Re-engaging with you after 24 hours. Please let us know how we can assist you!" }
+                                                    }, { 
+                                                        headers: { 
+                                                            Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                                                            "X-Debug-Session": status.id
+                                                        } 
+                                                    });
+
+                                                    console.log(`[RETRY] Message sent successfully after template:`, retryResponse.data);
+
+                                                } catch (retryError) {
+                                                    console.error("[RETRY ERROR] Failed to send message after template:", retryError.response?.data || retryError.message);
+                                                }
+                                            }, 3000);
+
+                                        } catch (templateError) {
+                                            console.error("[TEMPLATE ERROR] Failed to send template:", templateError.response?.data || templateError.message);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle incoming messages
                     if (change.value.messages) {
                         for (const msg of change.value.messages) {
                             const context = msg.context;
-                            const statuses = change.value.statuses;
-
-                            if (statuses) {
-                                // Handle message status updates
-                                for (const status of statuses) {
-                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
-                                    updateMessageStatus(status.id, status.status);
-                                }
-                            }
-
                             if (context) {
                                 // Handle owner replies
                                 const originalMessageId = context.id;
@@ -260,6 +315,7 @@ app.post("/webhook", async (req, res) => {
         res.status(500).send("Webhook processing failed");
     }
 });
+
 
 function updateMessageStatus(messageId, status) {
     for (const [sessionId, session] of userSessions.entries()) {
