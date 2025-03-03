@@ -235,7 +235,7 @@ app.post("/webhook", async (req, res) => {
                                                     to: OWNER_PHONE_NUMBER,
                                                     type: "template",
                                                     template: {
-                                                        name: "initial_contact", // Your approved template
+                                                        name: "hello_world", // Use WhatsApp's default approved template
                                                         language: { code: "en_US" }
                                                     }
                                                 }, { 
