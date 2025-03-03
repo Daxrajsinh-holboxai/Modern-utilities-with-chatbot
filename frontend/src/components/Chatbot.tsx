@@ -13,6 +13,7 @@ interface ChatMessage {
     status?: "sent" | "delivered" | "read";
     customerId?: string;
     timestamp?: Date;
+    isTemplate?: boolean; // Add this
 }
 
 const B_url: string = import.meta.env.VITE_URL || "http://localhost:5000";

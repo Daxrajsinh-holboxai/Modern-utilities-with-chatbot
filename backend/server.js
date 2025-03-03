@@ -59,11 +59,40 @@ app.post("/send-message", async (req, res) => {
         const session = userSessions.get(sessionId);
         if (!session) return res.status(404).json({ error: "Session not found" });
 
-        // Add customer identifier to message
+        // Check if template is needed (24-hour window expired)
+        const hoursSinceLast = (new Date() - session.lastActivity) / 3600000;
+        if (hoursSinceLast > 24) {
+            // Send template message
+            const templateResponse = await axios.post(WHATSAPP_API_URL, {
+                messaging_product: "whatsapp",
+                to: OWNER_PHONE_NUMBER,
+                type: "template",
+                template: {
+                    name: "initial_contact", // Your approved template
+                    language: { code: "en_US" }
+                }
+            }, { 
+                headers: { 
+                    Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json"
+                } 
+            });
+
+            // Update session activity
+            session.lastActivity = new Date();
+
+            return res.status(200).json({ 
+                success: true, 
+                messageId: templateResponse.data.messages[0].id,
+                customerId: session.customerId,
+                isTemplate: true // Indicate this was a template message
+            });
+        }
+
+        // If within 24-hour window, send normal message
         const trackedMessage = `[Customer ${session.customerId}]\n${message}`;
-        
         console.log(`[OUTGOING] Sending message from ${session.customerId}: ${message}`);
-        
+
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
             to: OWNER_PHONE_NUMBER,
@@ -85,11 +114,8 @@ app.post("/send-message", async (req, res) => {
             sessionId
         };
 
-        // session.ownerMessageId = messageData.id;
-        session.messageContexts.set(messageData.id, {
-            originalMessage: message,
-            timestamp: new Date()
-        });
+        // Update session
+        session.ownerMessageId = messageData.id;
         session.messages.push(messageData);
         session.lastActivity = new Date();
 
