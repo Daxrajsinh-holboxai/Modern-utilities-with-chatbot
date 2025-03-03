@@ -59,40 +59,12 @@ app.post("/send-message", async (req, res) => {
         const session = userSessions.get(sessionId);
         if (!session) return res.status(404).json({ error: "Session not found" });
 
-        // Check if template is needed (24-hour window expired)
-        const hoursSinceLast = (new Date() - session.lastActivity) / 3600000;
-        if (hoursSinceLast > 24) {
-            // Send template message
-            const templateResponse = await axios.post(WHATSAPP_API_URL, {
-                messaging_product: "whatsapp",
-                to: OWNER_PHONE_NUMBER,
-                type: "template",
-                template: {
-                    name: "initial_contact", // Your approved template
-                    language: { code: "en_US" }
-                }
-            }, { 
-                headers: { 
-                    Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json"
-                } 
-            });
-
-            // Update session activity
-            session.lastActivity = new Date();
-
-            return res.status(200).json({ 
-                success: true, 
-                messageId: templateResponse.data.messages[0].id,
-                customerId: session.customerId,
-                isTemplate: true // Indicate this was a template message
-            });
-        }
-
-        // If within 24-hour window, send normal message
+        // Add customer identifier to message
         const trackedMessage = `[Customer ${session.customerId}]\n${message}`;
+        
         console.log(`[OUTGOING] Sending message from ${session.customerId}: ${message}`);
 
+        // Attempt to send the message
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
             to: OWNER_PHONE_NUMBER,
@@ -130,10 +102,85 @@ app.post("/send-message", async (req, res) => {
 
     } catch (error) {
         console.error(`[ERROR] Failed to send message: ${error.response?.data || error.message}`);
-        res.status(500).json({ 
-            error: "Failed to send message",
-            details: error.response?.data || error.message 
-        });
+
+        // Handle 24-hour policy error
+        if (error.response?.data?.error?.code === 131047) {
+            console.log(`[TEMPLATE] Sending template message to re-engage`);
+
+            try {
+                // Send template message
+                const templateResponse = await axios.post(WHATSAPP_API_URL, {
+                    messaging_product: "whatsapp",
+                    to: OWNER_PHONE_NUMBER,
+                    type: "template",
+                    template: {
+                        name: "initial_contact", // Your approved template
+                        language: { code: "en_US" }
+                    }
+                }, { 
+                    headers: { 
+                        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                        "Content-Type": "application/json"
+                    } 
+                });
+
+                // Update session activity
+                const session = userSessions.get(sessionId);
+                session.lastActivity = new Date();
+
+                console.log(`[TEMPLATE] Template message sent successfully: ${templateResponse.data.messages[0].id}`);
+
+                // Retry sending the original message
+                const retryResponse = await axios.post(WHATSAPP_API_URL, {
+                    messaging_product: "whatsapp",
+                    to: OWNER_PHONE_NUMBER,
+                    type: "text",
+                    text: { body: trackedMessage }
+                }, { 
+                    headers: { 
+                        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                        "X-Debug-Session": sessionId
+                    } 
+                });
+
+                const retryMessageData = {
+                    id: retryResponse.data.messages[0].id,
+                    content: message,
+                    timestamp: new Date(),
+                    status: "sent",
+                    customerId: session.customerId,
+                    sessionId
+                };
+
+                // Update session
+                session.ownerMessageId = retryMessageData.id;
+                session.messages.push(retryMessageData);
+                session.lastActivity = new Date();
+
+                console.log(`[STATUS] Retry message sent successfully: ${retryMessageData.id}`);
+
+                res.status(200).json({ 
+                    success: true, 
+                    messageId: retryMessageData.id,
+                    customerId: session.customerId,
+                    isTemplate: true // Indicate template was used
+                });
+
+            } catch (templateError) {
+                console.error(`[TEMPLATE ERROR] Failed to send template: ${templateError.response?.data || templateError.message}`);
+                res.status(500).json({ 
+                    error: "Failed to send template message",
+                    details: templateError.response?.data || templateError.message 
+                });
+            }
+
+        } else {
+            // Handle other errors
+            res.status(500).json({ 
+                error: "Failed to send message",
+                details: error.response?.data || error.message 
+            });
+        }
     }
 });
 

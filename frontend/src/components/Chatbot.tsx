@@ -202,6 +202,11 @@ const Chatbot: React.FC = () => {
                                             Status: {msg.status || "sent"}
                                         </div>
                                     )} */}
+                                    {msg.isTemplate && (
+    <div className="text-xs text-blue-200 mt-1">
+        Official Notification
+    </div>
+)}
                                 </motion.div>
                             ))}
                             {awaitingReply && (
