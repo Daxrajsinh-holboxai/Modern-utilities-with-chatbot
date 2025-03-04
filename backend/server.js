@@ -62,138 +62,42 @@ app.post("/start-session", (req, res) => {
 
 // Enhanced send-message with tracking
 app.post("/send-message", async (req, res) => {
-    const { sessionId, message, customerId } = req.body;
+    const { sessionId, message } = req.body;
+
+    console.log(`[OUTGOING] Sending message from ${sessionId}: ${message}`);
 
     if (!sessionId || !message) {
+        console.error("[ERROR] Missing sessionId or message in /send-message");
         return res.status(400).json({ error: "Missing required fields" });
     }
 
     try {
         const session = userSessions.get(sessionId);
-        if (!session) return res.status(404).json({ error: "Session not found" });
+        if (!session) {
+            console.error(`[ERROR] Session not found: ${sessionId}`);
+            return res.status(404).json({ error: "Session not found" });
+        }
 
-        const trackedMessage = `[Customer ${session.customerId}]\n${message}`;
-        
-        console.log(`[OUTGOING] Sending message from ${session.customerId}: ${message}`);
-
-        // Send message to WhatsApp API
+        // Sending message to WhatsApp
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
             to: OWNER_PHONE_NUMBER,
             type: "text",
-            text: { body: trackedMessage }
-        }, { 
-            headers: { 
-                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                "X-Debug-Session": sessionId
-            } 
-        });
+            text: { body: `New Message from ${sessionId}:\n${message}` }
+        }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
-        const messageData = {
-            id: response.data.messages[0].id,
-            content: message,
-            timestamp: new Date(),
-            status: "sent",
-            customerId: session.customerId,
-            sessionId
-        };
+        console.log(`[SUCCESS] WhatsApp message sent. Message ID: ${response.data.messages?.[0]?.id}`);
 
-        // Update session data
-        session.ownerMessageId = messageData.id;
-        session.messages.push(messageData);
-        session.lastActivity = new Date();
+        session.ownerMessageId = response.data.messages?.[0]?.id;
+        session.messages.push({ sender: "user", message });
 
-        console.log(`[STATUS] Message ${messageData.id} sent successfully`);
-
-        res.status(200).json({ 
-            success: true, 
-            messageId: messageData.id,
-            customerId: session.customerId
-        });
-
+        res.status(200).json({ success: true });
     } catch (error) {
-        console.error(`[ERROR] Failed to send message: ${error.response?.data || error.message}`);
-
-        // Handle "Re-engagement message" error (error code 131047)
-        if (error.response?.data?.errors?.[0]?.code === 131047) {
-            console.log("[TEMPLATE] Attempting to send re-engagement template...");
-
-            try {
-                // Step 1: Send the template message
-                // Modify template sending to include US-specific parameters
-const templateResponse = await axios.post(WHATSAPP_API_URL, {
-    messaging_product: "whatsapp",
-    to: OWNER_PHONE_NUMBER,
-    type: "template",
-    template: {
-        name: "hello_world",
-        language: { code: "en_US" },
-        components: [{
-            type: "body",
-            parameters: [{ type: "text", text: session.customerId }]
-        }]
-    }
-}, {
-    headers: {
-        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-        "X-US-Number": "true" // Custom header for US handling
+        console.error("[ERROR] Failed to send message:", JSON.stringify(error.response?.data || error.message, null, 2));
+        res.status(500).json({ error: "Failed to send message", details: error.response?.data || error.message });
     }
 });
 
-                console.log("[TEMPLATE] Template sent successfully: ", templateResponse.data);
-
-                // Step 2: Wait 3 seconds before retrying the original message
-                setTimeout(async () => {
-                    try {
-                        console.log("[RETRY] Retrying message after template...");
-
-                        const retryResponse = await axios.post(WHATSAPP_API_URL, {
-                            messaging_product: "whatsapp",
-                            to: OWNER_PHONE_NUMBER,
-                            type: "text",
-                            text: { body: trackedMessage }
-                        }, { 
-                            headers: { 
-                                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                                "X-Debug-Session": sessionId
-                            } 
-                        });
-
-                        console.log("[RETRY] Message sent successfully after template:", retryResponse.data);
-
-                        res.status(200).json({ 
-                            success: true, 
-                            messageId: retryResponse.data.messages[0].id,
-                            customerId: session.customerId,
-                            isTemplate: true // Indicates a template was used
-                        });
-
-                    } catch (retryError) {
-                        console.error("[RETRY ERROR] Failed to send message after template:", retryError.response?.data || retryError.message);
-                        res.status(500).json({
-                            error: "Message could not be sent after template",
-                            details: retryError.response?.data || retryError.message
-                        });
-                    }
-                }, 3000); // Delay before retrying the original message
-
-            } catch (templateError) {
-                console.error("[TEMPLATE ERROR] Failed to send template:", templateError.response?.data || templateError.message);
-                res.status(500).json({
-                    error: "Failed to send template message",
-                    details: templateError.response?.data || templateError.message
-                });
-            }
-
-        } else {
-            // Handle other errors
-            res.status(500).json({ 
-                error: "Failed to send message",
-                details: error.response?.data || error.message 
-            });
-        }
-    }
-});
 
 // Webhook verification (GET method)
 app.get("/webhook", (req, res) => {
