@@ -95,9 +95,13 @@ app.post("/send-message", async (req, res) => {
         // Sending message to WhatsApp
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
-            to: OWNER_PHONE_NUMBER,
-            type: "text",
-            text: { body: `New Message from ${sessionId}:\n${message}` }
+  recipient_type: "individual", // Required field
+  to: OWNER_PHONE_NUMBER, // Must be in E.164 format (e.g., "15556304022")
+  type: "text",
+  text: { 
+    preview_url: false, // Add if needed
+    body: "Your message" 
+  }
         }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
 
         console.log(`[SUCCESS] WhatsApp message sent. Message ID: ${response.data.messages?.[0]?.id}`);
