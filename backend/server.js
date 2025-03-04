@@ -10,6 +10,10 @@ const { v4: uuidv4 } = require("uuid");
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
+const FRONTEND_URL = "https://www.modernutilities.com"; // Replace with your actual frontend URL
+
+// Enable CORS for API routes
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 
 app.use(express.json());
 app.use(bodyParser.json());
