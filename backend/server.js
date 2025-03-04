@@ -10,14 +10,28 @@ const { v4: uuidv4 } = require("uuid");
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
-const FRONTEND_URL = "https://www.modernutilities.com"; // Replace with your actual frontend URL
 
 // Enable CORS for API routes
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+const allowedOrigins = [
+    "https://www.modernutilities.com", // Production frontend
+    "http://localhost:5173",           // Development frontend (Vite)
+    "http://localhost:3000",           // Development frontend (React default)
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error("Not allowed by CORS"));
+        }
+    },
+    credentials: true
+}));
+
 
 app.use(express.json());
 app.use(bodyParser.json());
-app.use(cors());
 // Add this before your send-message endpoint
 // app.use((req, res, next) => {
 //     const usNumberPattern = /^1\d{10}$/;
