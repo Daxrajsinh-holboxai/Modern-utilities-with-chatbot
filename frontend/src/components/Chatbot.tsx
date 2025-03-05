@@ -31,11 +31,19 @@ const socket = io(B_url);
 const Chatbot: React.FC = () => {
     const [sessionId, setSessionId] = useState<string>(localStorage.getItem("sessionId") || "");
     const [customerId, setCustomerId] = useState<string>(localStorage.getItem("customerId") || "");
-    const [chat, setChat] = useState<ChatMessage[]>(
-        JSON.parse(localStorage.getItem("chat") || "[]") || [
-            { id: uuidv4(), sender: "bot", message: "Hello! This is Modern Utilities. Who do I have the pleasure of chatting with?" },
-        ]
-    );
+    // frontend.tsx (modify useState initialization)
+const [chat, setChat] = useState<ChatMessage[]>(() => {
+    // Fix greeting message logic
+    const storedChat = localStorage.getItem("chat");
+    if (!storedChat) {
+      return [{ 
+        id: uuidv4(), 
+        sender: "bot", 
+        message: "Hello! This is Modern Utilities. Who do I have the pleasure of chatting with?"
+      }];
+    }
+    return JSON.parse(storedChat);
+  });
     const [message, setMessage] = useState<string>("");
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [isSending, setIsSending] = useState<boolean>(false);
@@ -202,11 +210,6 @@ const Chatbot: React.FC = () => {
                                             Status: {msg.status || "sent"}
                                         </div>
                                     )} */}
-                                    {msg.isTemplate && (
-    <div className="text-xs text-blue-200 mt-1">
-        Official Notification
-    </div>
-)}
                                 </motion.div>
                             ))}
                             {awaitingReply && (
