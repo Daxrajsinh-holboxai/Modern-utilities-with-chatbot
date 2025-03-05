@@ -26,16 +26,8 @@ setInterval(() => {
 
         // Send template if approaching 24h limit
         if (hoursInactive >= 23 && hoursInactive < 24) {
-            axios.post(WHATSAPP_API_URL, {
-                messaging_product: "whatsapp",
-                to: OWNER_PHONE_NUMBER,
-                type: "template",
-                template: {
-                    name: "session_keepalive",
-                    language: { code: "en_US" }
-                }
-            }).then(() => {
-                session.lastActivity = new Date();
+            sendTemplateMessage(session).catch(error => {
+                console.error(`[SESSION] Keepalive failed for ${sessionId}:`, error);
             });
         }
 
@@ -54,6 +46,45 @@ const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 const OWNER_PHONE_NUMBER = process.env.OWNER_PHONE_NUMBER;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_secure_verify_token";
 const BACKEND_URL = process.env.BACKEND_URL;
+
+// Add these functions after WhatsApp API config
+const sendTemplateMessage = async (session) => {
+    try {
+        const response = await axios.post(
+            WHATSAPP_API_URL,
+            {
+                messaging_product: "whatsapp",
+                to: OWNER_PHONE_NUMBER,
+                type: "template",
+                template: {
+                    name: "session_keepalive",
+                    language: { code: "en_US" }
+                }
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json"
+                }
+            }
+        );
+        session.lastActivity = new Date();
+        return true;
+    } catch (error) {
+        console.error("[TEMPLATE ERROR]", error.response?.data || error.message);
+        return false;
+    }
+};
+
+const sendMessageToOwner = async (message, session) => {
+    const trackedMessage = `[Customer ${session.customerId}]\n${message}`;
+    return axios.post(WHATSAPP_API_URL, {
+        messaging_product: "whatsapp",
+        to: OWNER_PHONE_NUMBER,
+        type: "text",
+        text: { body: trackedMessage }
+    });
+};
 
 // Generate session with customer identification
 app.post("/start-session", (req, res) => {
@@ -91,12 +122,13 @@ app.post("/send-message", async (req, res) => {
         if (hoursSinceLast > 24) {
             // Store pending messages
             session.pendingMessages = [...(session.pendingMessages || []), message];
-            
-            // Send template
-            await sendTemplateMessage();
-            
-            // Return special status
-            return res.status(202).json({ // 202 Accepted
+
+            const templateSent = await sendTemplateMessage(session);
+            if (!templateSent) {
+                return res.status(500).json({ error: "Failed to send template" });
+            }
+
+            return res.status(202).json({
                 status: "pending_template",
                 customerId: session.customerId
             });
@@ -154,7 +186,7 @@ app.post("/send-message", async (req, res) => {
 app.post("/handle-template-response", async (req, res) => {
     const { sessionId } = req.body;
     const session = userSessions.get(sessionId);
-    
+
     // Send pending messages
     if (session?.pendingMessages) {
         session.pendingMessages.forEach(async (msg) => {
@@ -235,6 +267,11 @@ app.post("/webhook", async (req, res) => {
         console.error("[WEBHOOK ERROR]", error);
         res.status(500).send("Webhook processing failed");
     }
+});
+
+app.get("/check-pending/:sessionId", (req, res) => {
+    const session = userSessions.get(req.params.sessionId);
+    res.json({ hasPending: !!session?.pendingMessages?.length });
 });
 
 // Enhanced webhook handler with delivery status (POST method...)

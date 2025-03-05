@@ -91,6 +91,24 @@ const Chatbot: React.FC = () => {
         }
     }, [sessionId]);
 
+    // Add this useEffect to handle pending messages
+    useEffect(() => {
+        if (sessionId) {
+            const checkPending = setInterval(async () => {
+                try {
+                    const response = await axios.get(`${B_url}/check-pending/${sessionId}`);
+                    if (response.data.hasPending) {
+                        await axios.post(`${B_url}/handle-template-response`, { sessionId });
+                    }
+                } catch (error) {
+                    console.error("Pending check failed:", error);
+                }
+            }, 30000); // Check every 30 seconds
+
+            return () => clearInterval(checkPending);
+        }
+    }, [sessionId]);
+
     // Save chat to localStorage and scroll to bottom
     useEffect(() => {
         localStorage.setItem("chat", JSON.stringify(chat));
