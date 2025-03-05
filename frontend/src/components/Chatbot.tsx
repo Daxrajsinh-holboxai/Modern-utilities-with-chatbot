@@ -67,12 +67,13 @@ const Chatbot: React.FC = () => {
         } else {
             socket.emit("join", sessionId);
 
-            const handleUpdate = (messages: ChatMessage[]) => {
-                console.log("[FRONTEND] Received update:", messages);
+            const handleUpdate = (newMessages: ChatMessage[]) => {
+                console.log("[FRONTEND] Received update:", newMessages);
                 // Merge new messages with existing ones
                 setChat(prev => {
+                    const filteredMessages = newMessages.filter(msg => msg.message && msg.message.trim().length > 0);
                     const merged = [...prev];
-                    messages.forEach(newMsg => {
+                    filteredMessages.forEach(newMsg => {
                         if (!merged.some(m => m.id === newMsg.id)) {
                             merged.push(newMsg);
                         }
