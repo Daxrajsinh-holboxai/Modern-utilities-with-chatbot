@@ -129,7 +129,7 @@ const Chatbot: React.FC = () => {
                             </button>
                         </div>
                         {/* Messages area */}
-                        // Updated message display logic
+                
 <div className="flex-1 flex flex-col space-y-2 p-2 sm:p-3 overflow-y-auto">
     {chat.map((msg) => {
         // Display only relevant parameters
