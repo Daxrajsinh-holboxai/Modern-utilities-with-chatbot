@@ -29,6 +29,11 @@ const uuidv4 = () => {
     });
 };
 
+const TEMPLATES = {
+    CUSTOMER_MESSAGE: 'customer_message_1',
+    OWNER_RESPONSE: 'owner_response_1'
+};
+
 const Chatbot: React.FC = () => {
     const [sessionId, setSessionId] = useState<string>(localStorage.getItem("sessionId") || "");
     const [customerId, setCustomerId] = useState<string>(localStorage.getItem("customerId") || "");
@@ -124,48 +129,46 @@ const Chatbot: React.FC = () => {
                             </button>
                         </div>
                         {/* Messages area */}
-                        <div className="flex-1 flex flex-col space-y-2 p-2 sm:p-3 overflow-y-auto">
-                            {chat.map((msg) => {
-                                let displayText = msg.message; // Default to original message
+                        // Updated message display logic
+<div className="flex-1 flex flex-col space-y-2 p-2 sm:p-3 overflow-y-auto">
+    {chat.map((msg) => {
+        // Display only relevant parameters
+        let displayText = '';
+        if (msg.template === TEMPLATES.CUSTOMER_MESSAGE) {
+            // For customer messages, show only the actual message (second parameter)
+            displayText = msg.parameters?.[1] || '';
+        } else if (msg.template === TEMPLATES.OWNER_RESPONSE) {
+            // For owner responses, show only the response text (first parameter)
+            displayText = msg.parameters?.[0] || '';
+        } else {
+            // Fallback for non-template messages
+            displayText = msg.message;
+        }
 
-                                if (msg.template) {
-                                    switch (msg.template) {
-                                        case 'customer_message':
-                                            displayText = `Customer: ${msg.parameters?.[1] || msg.message}`;
-                                            break;
-                                        case 'owner_response':
-                                            displayText = `Support: ${msg.parameters?.[0] || msg.message}`;
-                                            break;
-                                        default:
-                                            displayText = msg.message;
-                                    }
-                                }
+        // Determine sender type
+        const senderType = msg.direction === 'outgoing' ? 'user' : 
+                         msg.direction === 'incoming' ? 'owner' : 
+                         msg.sender || 'bot';
 
-                                const senderType = msg.direction === 'outgoing'
-                                    ? 'user'
-                                    : msg.direction === 'incoming'
-                                        ? 'owner'
-                                        : msg.sender || 'bot';
-
-                                return (
-                                    <motion.div
-                                        key={msg.id}
-                                        initial={{ opacity: 0, x: senderType === "user" ? 50 : -50 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ duration: 0.3, ease: "easeOut" }}
-                                        className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(senderType)}`}
-                                    >
-                                        {displayText}
-                                        {/* Status indicator for user messages */}
-                                        {senderType === "user" && (
-                                            <div className="text-xs text-gray-200 mt-1">
-                                                Status: {msg.status || "sent"}
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                );
-                            })}
-                        </div>
+        return (
+            <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, x: senderType === "user" ? 50 : -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(senderType)}`}
+            >
+                {displayText}
+                
+                {senderType === "user" && (
+                    <div className="text-xs text-gray-200 mt-1">
+                        Status: {msg.status || "sent"}
+                    </div>
+                )}
+            </motion.div>
+        );
+    })}
+</div>
                         <div className="border-t border-gray-200 bg-white p-2 flex items-center space-x-1 sm:space-x-2">
                             <input
                                 value={message}

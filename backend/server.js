@@ -42,8 +42,8 @@ let customerCounter = 1;
 
 
 const TEMPLATES = {
-    CUSTOMER_MESSAGE: 'customer_message',
-    OWNER_RESPONSE: 'owner_response'
+    CUSTOMER_MESSAGE: 'customer_message_1',
+    OWNER_RESPONSE: 'owner_response_1'
   };
 
 // WhatsApp API Config
@@ -114,49 +114,46 @@ app.post("/start-session", (req, res) => {
 // Modified send-message endpoint
 app.post('/send-message', async (req, res) => {
     const { sessionId, message, customerId, isOwner } = req.body;
-  
+
     try {
-      const session = userSessions.get(sessionId);
-      const templateName = isOwner ? TEMPLATES.OWNER_RESPONSE : TEMPLATES.CUSTOMER_MESSAGE;
-      
-      // Always send as template
-      const response = await axios.post(WHATSAPP_API_URL, {
-        messaging_product: "whatsapp",
-        to: isOwner ? OWNER_PHONE_NUMBER : session.customerPhone,
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: "en_US" },
-          components: [{
-            type: "body",
-            parameters: isOwner 
-              ? [
-                  { type: "text", text: customerId },
-                  { type: "text", text: message }
-                ]
-              : [
-                  { type: "text", text: message }
-                ]
-          }]
-        }
-      });
-  
-      // Store message with template metadata
-      session.messages.push({
-        id: response.data.messages[0].id,
-        template: templateName,
-        parameters: [customerId, message],
-        direction: isOwner ? 'outgoing' : 'incoming',
-        timestamp: new Date()
-      });
-  
-      res.status(200).json({ success: true });
-  
+        const session = userSessions.get(sessionId);
+        const templateName = isOwner ? TEMPLATES.OWNER_RESPONSE : TEMPLATES.CUSTOMER_MESSAGE;
+        
+        // Parameters structure for templates
+        const parameters = isOwner 
+            ? [{ type: "text", text: message }]  // Owner response template only needs message
+            : [
+                { type: "text", text: customerId },
+                { type: "text", text: message }  // Customer message template needs ID + message
+            ];
+
+        // Send template message
+        const response = await axios.post(WHATSAPP_API_URL, {
+            messaging_product: "whatsapp",
+            to: isOwner ? session.customerPhone : OWNER_PHONE_NUMBER,  // Correct recipient
+            type: "template",
+            template: {
+                name: templateName,
+                language: { code: "en_US" },
+                components: [{ type: "body", parameters }]
+            }
+        });
+
+        // Store only parameters in session
+        session.messages.push({
+            id: response.data.messages[0].id,
+            template: templateName,
+            parameters: parameters.map(p => p.text),
+            direction: isOwner ? 'outgoing' : 'incoming',
+            timestamp: new Date()
+        });
+
+        res.status(200).json({ success: true });
     } catch (error) {
-      console.error('Template send error:', error.response?.data);
-      res.status(500).json({ error: 'Failed to send template message' });
+        console.error('Template send error:', error.response?.data);
+        res.status(500).json({ error: 'Failed to send template message' });
     }
-  });
+});
 
 // Add endpoint to handle template responses
 app.post("/handle-template-response", async (req, res) => {
@@ -177,55 +174,56 @@ app.post('/webhook', async (req, res) => {
     const entries = req.body.entry;
     
     for (const entry of entries) {
-      for (const change of entry.changes) {
-        if (change.value.messages) {
-          for (const msg of change.value.messages) {
-            if (msg.type === 'template' && msg.template) {
-              const { name: templateName, components } = msg.template;
-              const messageParams = components[0].parameters.map(p => p.text);
-              
-              // Find session by phone number
-              const session = Array.from(userSessions.values()).find(
-                s => s.customerPhone === msg.from
-              );
-  
-              if (session) {
-                session.messages.push({
-                  id: msg.id,
-                  template: templateName,
-                  parameters: messageParams,
-                  direction: 'incoming',
-                  timestamp: new Date(msg.timestamp * 1000)
-                });
-                
-                // Forward to opposite party using template
-                const forwardTemplate = templateName === TEMPLATES.CUSTOMER_MESSAGE 
-                  ? TEMPLATES.OWNER_RESPONSE
-                  : TEMPLATES.CUSTOMER_MESSAGE;
-  
-                await axios.post(WHATSAPP_API_URL, {
-                  messaging_product: "whatsapp",
-                  to: templateName === TEMPLATES.CUSTOMER_MESSAGE 
-                    ? OWNER_PHONE_NUMBER 
-                    : session.customerPhone,
-                  type: "template",
-                  template: {
-                    name: forwardTemplate,
-                    language: { code: "en_US" },
-                    components: [{
-                      type: "body",
-                      parameters: messageParams
-                    }]
-                  }
-                });
-              }
+        for (const change of entry.changes) {
+            if (change.value.messages) {
+                for (const msg of change.value.messages) {
+                    if (msg.type === 'template' && msg.template) {
+                        const { name: templateName, components } = msg.template;
+                        const messageParams = components[0].parameters.map(p => p.text);
+                        
+                        // Find session by phone number
+                        const session = Array.from(userSessions.values()).find(
+                            s => s.customerPhone === msg.from
+                        );
+
+                        if (session) {
+                            // Store only parameters
+                            session.messages.push({
+                                id: msg.id,
+                                template: templateName,
+                                parameters: messageParams,
+                                direction: 'incoming',
+                                timestamp: new Date(msg.timestamp * 1000)
+                            });
+                            
+                            // Forward parameters only
+                            const forwardTemplate = templateName === TEMPLATES.CUSTOMER_MESSAGE 
+                                ? TEMPLATES.OWNER_RESPONSE
+                                : TEMPLATES.CUSTOMER_MESSAGE;
+
+                            await axios.post(WHATSAPP_API_URL, {
+                                messaging_product: "whatsapp",
+                                to: templateName === TEMPLATES.CUSTOMER_MESSAGE 
+                                    ? OWNER_PHONE_NUMBER 
+                                    : session.customerPhone,
+                                type: "template",
+                                template: {
+                                    name: forwardTemplate,
+                                    language: { code: "en_US" },
+                                    components: [{
+                                        type: "body",
+                                        parameters: messageParams.map(p => ({ type: "text", text: p }))
+                                    }]
+                                }
+                            });
+                        }
+                    }
+                }
             }
-          }
         }
-      }
     }
     res.sendStatus(200);
-  });
+});
 
 app.get("/check-pending/:sessionId", (req, res) => {
     const session = userSessions.get(req.params.sessionId);
