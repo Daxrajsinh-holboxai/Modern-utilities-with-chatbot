@@ -40,6 +40,12 @@ setInterval(() => {
 
 let customerCounter = 1;
 
+
+const TEMPLATES = {
+    CUSTOMER_MESSAGE: 'customer_message',
+    OWNER_RESPONSE: 'owner_response'
+  };
+
 // WhatsApp API Config
 const WHATSAPP_API_URL = process.env.WHATSAPP_API_URL;
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
@@ -105,82 +111,52 @@ app.post("/start-session", (req, res) => {
     res.status(200).json({ sessionId, customerId });
 });
 
-// Enhanced send-message with tracking
-app.post("/send-message", async (req, res) => {
-    const { sessionId, message, customerId } = req.body;
-
-    if (!sessionId || !message) {
-        return res.status(400).json({ error: "Missing required fields" });
-    }
-
+// Modified send-message endpoint
+app.post('/send-message', async (req, res) => {
+    const { sessionId, message, customerId, isOwner } = req.body;
+  
     try {
-        const session = userSessions.get(sessionId);
-        if (!session) return res.status(404).json({ error: "Session not found" });
-
-        // Check if template is needed (24-hour window expired)
-        const hoursSinceLast = (new Date() - session.lastActivity) / 3600000;
-        if (hoursSinceLast > 24) {
-            // Store pending messages
-            session.pendingMessages = [...(session.pendingMessages || []), message];
-
-            const templateSent = await sendTemplateMessage(session);
-            if (!templateSent) {
-                return res.status(500).json({ error: "Failed to send template" });
-            }
-
-            return res.status(202).json({
-                status: "pending_template",
-                customerId: session.customerId
-            });
+      const session = userSessions.get(sessionId);
+      const templateName = isOwner ? TEMPLATES.OWNER_RESPONSE : TEMPLATES.CUSTOMER_MESSAGE;
+      
+      // Always send as template
+      const response = await axios.post(WHATSAPP_API_URL, {
+        messaging_product: "whatsapp",
+        to: isOwner ? OWNER_PHONE_NUMBER : session.customerPhone,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: "en_US" },
+          components: [{
+            type: "body",
+            parameters: isOwner 
+              ? [
+                  { type: "text", text: customerId },
+                  { type: "text", text: message }
+                ]
+              : [
+                  { type: "text", text: message }
+                ]
+          }]
         }
-
-        // If within 24-hour window, send normal message
-        const trackedMessage = `[Customer ${session.customerId}]\n${message}`;
-        console.log(`[OUTGOING] Sending message from ${session.customerId}: ${message}`);
-
-        const response = await axios.post(WHATSAPP_API_URL, {
-            messaging_product: "whatsapp",
-            to: OWNER_PHONE_NUMBER,
-            type: "text",
-            text: { body: trackedMessage }
-        }, {
-            headers: {
-                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                "X-Debug-Session": sessionId
-            }
-        });
-
-        const messageData = {
-            id: response.data.messages[0].id,
-            content: message,
-            timestamp: new Date(),
-            status: "sent",
-            customerId: session.customerId,
-            sessionId
-        };
-
-        // Update session
-        session.ownerMessageIds = [...(session.ownerMessageIds || []), messageData.id]; // Track all message IDs
-        session.messages.push(messageData);
-        session.lastActivity = new Date();
-
-        console.log(`[STATUS] Message ${messageData.id} sent successfully`);
-        console.log(`[DEBUG] WhatsApp API Response:`, response.data);
-
-        res.status(200).json({
-            success: true,
-            messageId: messageData.id,
-            customerId: session.customerId
-        });
-
+      });
+  
+      // Store message with template metadata
+      session.messages.push({
+        id: response.data.messages[0].id,
+        template: templateName,
+        parameters: [customerId, message],
+        direction: isOwner ? 'outgoing' : 'incoming',
+        timestamp: new Date()
+      });
+  
+      res.status(200).json({ success: true });
+  
     } catch (error) {
-        console.error(`[ERROR] Failed to send message: ${error.response?.data || error.message}`);
-        res.status(500).json({
-            error: "Failed to send message",
-            details: error.response?.data || error.message
-        });
+      console.error('Template send error:', error.response?.data);
+      res.status(500).json({ error: 'Failed to send template message' });
     }
-});
+  });
 
 // Add endpoint to handle template responses
 app.post("/handle-template-response", async (req, res) => {
@@ -196,78 +172,60 @@ app.post("/handle-template-response", async (req, res) => {
     }
 });
 
-// Webhook verification (GET method)
-app.post("/webhook", async (req, res) => {
-    const body = req.body;
-    console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
-
-    try {
-        if (body.object && body.entry) {
-            for (const entry of body.entry) {
-                for (const change of entry.changes) {
-                    if (change.value.messages) {
-                        for (const msg of change.value.messages) {
-                            const context = msg.context;
-                            const statuses = change.value.statuses;
-
-                            if (statuses) {
-                                // Handle message status updates
-                                for (const status of statuses) {
-                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
-                                    updateMessageStatus(status.id, status.status);
-                                }
-                            }
-
-                            if (context) {
-                                // Handle owner replies
-                                const originalMessageId = context.id;
-                                const replyMessage = msg.text.body;
-
-                                console.log(`[INCOMING] Reply received for message ${originalMessageId}: ${replyMessage}`);
-
-                                let targetSessionId = null;
-                                for (const [sessionId, session] of userSessions.entries()) {
-                                    if (session.ownerMessageIds?.includes(originalMessageId)) {
-                                        targetSessionId = sessionId;
-                                        break;
-                                    }
-                                }
-
-                                if (targetSessionId) {
-                                    const session = userSessions.get(targetSessionId);
-                                    const replyData = {
-                                        id: uuidv4(),
-                                        sender: "owner",
-                                        message: replyMessage,
-                                        timestamp: new Date(),
-                                        status: "delivered",
-                                        customerId: session.customerId,
-                                        sessionId: targetSessionId,
-                                        inReplyTo: originalMessageId
-                                    };
-
-                                    // Store reply with original message context
-                                    session.messages.push(replyData);
-                                    session.lastActivity = new Date();
-
-                                    // Notify all clients
-                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
-                                    console.log(`[SOCKET] Emitted update to session ${targetSessionId}`);
-                                } else {
-                                    console.warn(`[WARNING] No session found for message ID: ${originalMessageId}`);
-                                }
-                            }
-                        }
-                    }
-                }
+// Modified webhook handler
+app.post('/webhook', async (req, res) => {
+    const entries = req.body.entry;
+    
+    for (const entry of entries) {
+      for (const change of entry.changes) {
+        if (change.value.messages) {
+          for (const msg of change.value.messages) {
+            if (msg.type === 'template' && msg.template) {
+              const { name: templateName, components } = msg.template;
+              const messageParams = components[0].parameters.map(p => p.text);
+              
+              // Find session by phone number
+              const session = Array.from(userSessions.values()).find(
+                s => s.customerPhone === msg.from
+              );
+  
+              if (session) {
+                session.messages.push({
+                  id: msg.id,
+                  template: templateName,
+                  parameters: messageParams,
+                  direction: 'incoming',
+                  timestamp: new Date(msg.timestamp * 1000)
+                });
+                
+                // Forward to opposite party using template
+                const forwardTemplate = templateName === TEMPLATES.CUSTOMER_MESSAGE 
+                  ? TEMPLATES.OWNER_RESPONSE
+                  : TEMPLATES.CUSTOMER_MESSAGE;
+  
+                await axios.post(WHATSAPP_API_URL, {
+                  messaging_product: "whatsapp",
+                  to: templateName === TEMPLATES.CUSTOMER_MESSAGE 
+                    ? OWNER_PHONE_NUMBER 
+                    : session.customerPhone,
+                  type: "template",
+                  template: {
+                    name: forwardTemplate,
+                    language: { code: "en_US" },
+                    components: [{
+                      type: "body",
+                      parameters: messageParams
+                    }]
+                  }
+                });
+              }
             }
+          }
         }
-        res.sendStatus(200);
-    } catch (error) {
-        console.error("[WEBHOOK ERROR]", error);
-        res.status(500).send("Webhook processing failed");
+      }
     }
-});
+    res.sendStatus(200);
+  });
 
 app.get("/check-pending/:sessionId", (req, res) => {
     const session = userSessions.get(req.params.sessionId);
