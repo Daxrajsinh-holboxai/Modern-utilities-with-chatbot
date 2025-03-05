@@ -211,6 +211,7 @@ const [chat, setChat] = useState<ChatMessage[]>(() => {
                                         </div>
                                     )} */}
                                 </motion.div>
+                                
                             ))}
                             {awaitingReply && (
                                 <div className="p-2 my-1 max-w-[75%] bg-gray-200 text-gray-700 mr-auto rounded-bl-lg rounded-tr-lg rounded-br-lg">

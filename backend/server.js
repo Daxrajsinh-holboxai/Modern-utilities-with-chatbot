@@ -18,6 +18,34 @@ app.use(cors());
 // Store chat sessions with additional metadata
 const userSessions = new Map();
 
+// Add session maintenance scheduler
+setInterval(() => {
+    const now = new Date();
+    userSessions.forEach((session, sessionId) => {
+        const hoursInactive = (now - session.lastActivity) / 3600000;
+
+        // Send template if approaching 24h limit
+        if (hoursInactive >= 23 && hoursInactive < 24) {
+            axios.post(WHATSAPP_API_URL, {
+                messaging_product: "whatsapp",
+                to: OWNER_PHONE_NUMBER,
+                type: "template",
+                template: {
+                    name: "session_keepalive",
+                    language: { code: "en_US" }
+                }
+            }).then(() => {
+                session.lastActivity = new Date();
+            });
+        }
+
+        // Cleanup old sessions
+        if (hoursInactive > 30 * 24) {
+            userSessions.delete(sessionId);
+        }
+    });
+}, 5 * 60 * 1000); // Run every 5 minutes
+
 let customerCounter = 1;
 
 // WhatsApp API Config
@@ -32,7 +60,7 @@ app.post("/start-session", (req, res) => {
     const sessionId = uuidv4();
     // const customerId = `CUST-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const customerId = `cust${customerCounter++}`;
-    
+
     userSessions.set(sessionId, {
         customerId,
         messages: [],
@@ -61,30 +89,16 @@ app.post("/send-message", async (req, res) => {
         // Check if template is needed (24-hour window expired)
         const hoursSinceLast = (new Date() - session.lastActivity) / 3600000;
         if (hoursSinceLast > 24) {
-            // Send template message
-            const templateResponse = await axios.post(WHATSAPP_API_URL, {
-                messaging_product: "whatsapp",
-                to: OWNER_PHONE_NUMBER,
-                type: "template",
-                template: {
-                    name: "initial_contact", // Your approved template
-                    language: { code: "en_US" }
-                }
-            }, { 
-                headers: { 
-                    Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json"
-                } 
-            });
-
-            // Update session activity
-            session.lastActivity = new Date();
-
-            return res.status(200).json({ 
-                success: true, 
-                messageId: templateResponse.data.messages[0].id,
-                customerId: session.customerId,
-                isTemplate: true // Indicate this was a template message
+            // Store pending messages
+            session.pendingMessages = [...(session.pendingMessages || []), message];
+            
+            // Send template
+            await sendTemplateMessage();
+            
+            // Return special status
+            return res.status(202).json({ // 202 Accepted
+                status: "pending_template",
+                customerId: session.customerId
             });
         }
 
@@ -97,11 +111,11 @@ app.post("/send-message", async (req, res) => {
             to: OWNER_PHONE_NUMBER,
             type: "text",
             text: { body: trackedMessage }
-        }, { 
-            headers: { 
+        }, {
+            headers: {
                 Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
                 "X-Debug-Session": sessionId
-            } 
+            }
         });
 
         const messageData = {
@@ -114,25 +128,39 @@ app.post("/send-message", async (req, res) => {
         };
 
         // Update session
-        session.ownerMessageId = messageData.id;
+        session.ownerMessageIds = [...(session.ownerMessageIds || []), messageData.id]; // Track all message IDs
         session.messages.push(messageData);
         session.lastActivity = new Date();
 
         console.log(`[STATUS] Message ${messageData.id} sent successfully`);
         console.log(`[DEBUG] WhatsApp API Response:`, response.data);
 
-        res.status(200).json({ 
-            success: true, 
+        res.status(200).json({
+            success: true,
             messageId: messageData.id,
             customerId: session.customerId
         });
 
     } catch (error) {
         console.error(`[ERROR] Failed to send message: ${error.response?.data || error.message}`);
-        res.status(500).json({ 
+        res.status(500).json({
             error: "Failed to send message",
-            details: error.response?.data || error.message 
+            details: error.response?.data || error.message
         });
+    }
+});
+
+// Add endpoint to handle template responses
+app.post("/handle-template-response", async (req, res) => {
+    const { sessionId } = req.body;
+    const session = userSessions.get(sessionId);
+    
+    // Send pending messages
+    if (session?.pendingMessages) {
+        session.pendingMessages.forEach(async (msg) => {
+            await sendMessageToOwner(msg);
+        });
+        session.pendingMessages = [];
     }
 });
 
@@ -178,12 +206,12 @@ app.post("/webhook", async (req, res) => {
                                 // Handle owner replies
                                 const originalMessageId = context.id;
                                 const replyMessage = msg.text.body;
-                                
+
                                 console.log(`[INCOMING] Reply received for message ${originalMessageId}`);
-                                
+
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
-                                    if (session.ownerMessageId === originalMessageId) {
+                                    if (session.ownerMessageIds?.includes(originalMessageId)) {
                                         targetSessionId = sessionId;
                                         break;
                                     }
@@ -197,14 +225,20 @@ app.post("/webhook", async (req, res) => {
                                         timestamp: new Date(),
                                         status: "delivered",
                                         customerId: session.customerId,
-                                        sessionId: targetSessionId
+                                        sessionId: targetSessionId,
+                                        inReplyTo: originalMessageId
                                     };
 
-                                    session.messages.push(replyData);
-                                    session.lastActivity = new Date();
+                                    // Store reply with original message context
+                                    session.messages = session.messages.map(msg => {
+                                        if (msg.id === originalMessageId) {
+                                            return { ...msg, reply: replyData };
+                                        }
+                                        return msg;
+                                    });
 
-                                    console.log(`[ROUTING] Sending reply to session ${targetSessionId} (${session.customerId})`);
-                                    io.to(targetSessionId).emit(`reply-${targetSessionId}`, replyData);
+                                    // Notify all clients
+                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
                                 }
                             }
                         }
