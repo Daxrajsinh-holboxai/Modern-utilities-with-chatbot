@@ -237,7 +237,7 @@ app.post("/webhook", async (req, res) => {
     }
 });
 
-// Enhanced webhook handler with delivery status (POST method...)
+// Enhanced webhook handler with delivery status (POST method)
 app.post("/webhook", async (req, res) => {
     const body = req.body;
     console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
