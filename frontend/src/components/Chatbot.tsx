@@ -20,30 +20,30 @@ const B_url: string = import.meta.env.VITE_URL || "http://localhost:5000";
 const socket = io(B_url);
 
 // Generate a unique ID for messages
-    const uuidv4 = () => {
-        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-            const r = (Math.random() * 16) | 0,
-                v = c === "x" ? r : (r & 0x3) | 0x8;
-            return v.toString(16);
-        });
-    };
+const uuidv4 = () => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0,
+            v = c === "x" ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+};
 
 const Chatbot: React.FC = () => {
     const [sessionId, setSessionId] = useState<string>(localStorage.getItem("sessionId") || "");
     const [customerId, setCustomerId] = useState<string>(localStorage.getItem("customerId") || "");
     // frontend.tsx (modify useState initialization)
-const [chat, setChat] = useState<ChatMessage[]>(() => {
-    // Fix greeting message logic
-    const storedChat = localStorage.getItem("chat");
-    if (!storedChat) {
-      return [{ 
-        id: uuidv4(), 
-        sender: "bot", 
-        message: "Hello! This is Modern Utilities. Who do I have the pleasure of chatting with?"
-      }];
-    }
-    return JSON.parse(storedChat);
-  });
+    const [chat, setChat] = useState<ChatMessage[]>(() => {
+        // Fix greeting message logic
+        const storedChat = localStorage.getItem("chat");
+        if (!storedChat) {
+            return [{
+                id: uuidv4(),
+                sender: "bot",
+                message: "Hello! This is Modern Utilities. Who do I have the pleasure of chatting with?"
+            }];
+        }
+        return JSON.parse(storedChat);
+    });
     const [message, setMessage] = useState<string>("");
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [isSending, setIsSending] = useState<boolean>(false);
@@ -67,19 +67,25 @@ const [chat, setChat] = useState<ChatMessage[]>(() => {
         } else {
             socket.emit("join", sessionId);
 
-            const handleReply = (data: ChatMessage) => {
-                if (!chat.some((msg) => msg.id === data.id)) {
-                    setChat((prev) => [...prev, { ...data, sender: "owner" }]);
-                    setAwaitingReply(false);
-                    // playSound();
-                    console.log(`[FRONTEND] Received reply: ${data.message}`);
-                }
+            const handleUpdate = (messages: ChatMessage[]) => {
+                console.log("[FRONTEND] Received update:", messages);
+                // Merge new messages with existing ones
+                setChat(prev => {
+                    const merged = [...prev];
+                    messages.forEach(newMsg => {
+                        if (!merged.some(m => m.id === newMsg.id)) {
+                            merged.push(newMsg);
+                        }
+                    });
+                    return merged;
+                });
+                setAwaitingReply(false);
             };
 
-            socket.on(`reply-${sessionId}`, handleReply);
+            socket.on(`update-${sessionId}`, handleUpdate);
 
             return () => {
-                socket.off(`reply-${sessionId}`, handleReply);
+                socket.off(`update-${sessionId}`, handleUpdate);
             };
         }
     }, [sessionId]);
@@ -211,7 +217,7 @@ const [chat, setChat] = useState<ChatMessage[]>(() => {
                                         </div>
                                     )} */}
                                 </motion.div>
-                                
+
                             ))}
                             {awaitingReply && (
                                 <div className="p-2 my-1 max-w-[75%] bg-gray-200 text-gray-700 mr-auto rounded-bl-lg rounded-tr-lg rounded-br-lg">
