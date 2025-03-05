@@ -11,36 +11,18 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
 
-// Enable CORS for API routes
-const allowedOrigins = [
-    "https://www.modernutilities.com", // Production frontend
-    "http://localhost:5173",           // Development frontend (Vite)
-    "http://localhost:3000",           // Development frontend (React default)
-];
-
-app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error("Not allowed by CORS"));
-        }
-    },
-    credentials: true
-}));
-
-
 app.use(express.json());
 app.use(bodyParser.json());
+app.use(cors());
 // Add this before your send-message endpoint
-// app.use((req, res, next) => {
-//     const usNumberPattern = /^1\d{10}$/;
-//     if (!usNumberPattern.test(OWNER_PHONE_NUMBER)) {
-//         console.error("[VALIDATION] Invalid US number format");
-//         return res.status(400).json({ error: "Invalid US number configuration" });
-//     }
-//     next();
-// });
+app.use((req, res, next) => {
+    const usNumberPattern = /^1\d{10}$/;
+    if (!usNumberPattern.test(OWNER_PHONE_NUMBER)) {
+        console.error("[VALIDATION] Invalid US number format");
+        return res.status(400).json({ error: "Invalid US number configuration" });
+    }
+    next();
+});
 
 // Store chat sessions with additional metadata
 const userSessions = new Map();
@@ -76,46 +58,138 @@ app.post("/start-session", (req, res) => {
 
 // Enhanced send-message with tracking
 app.post("/send-message", async (req, res) => {
-    const { sessionId, message } = req.body;
-
-    console.log(`[OUTGOING] Sending message from ${sessionId}: ${message}`);
+    const { sessionId, message, customerId } = req.body;
 
     if (!sessionId || !message) {
-        console.error("[ERROR] Missing sessionId or message in /send-message");
         return res.status(400).json({ error: "Missing required fields" });
     }
 
     try {
         const session = userSessions.get(sessionId);
-        if (!session) {
-            console.error(`[ERROR] Session not found: ${sessionId}`);
-            return res.status(404).json({ error: "Session not found" });
-        }
+        if (!session) return res.status(404).json({ error: "Session not found" });
 
-        // Sending message to WhatsApp
+        const trackedMessage = `[Customer ${session.customerId}]\n${message}`;
+        
+        console.log(`[OUTGOING] Sending message from ${session.customerId}: ${message}`);
+
+        // Send message to WhatsApp API
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
-  recipient_type: "individual", // Required field
-  to: OWNER_PHONE_NUMBER, // Must be in E.164 format (e.g., "15556304022")
-  type: "text",
-  text: { 
-    preview_url: false, // Add if needed
-    body: "Your message" 
-  }
-        }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
+            to: OWNER_PHONE_NUMBER,
+            type: "text",
+            text: { body: trackedMessage }
+        }, { 
+            headers: { 
+                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                "X-Debug-Session": sessionId
+            } 
+        });
 
-        console.log(`[SUCCESS] WhatsApp message sent. Message ID: ${response.data.messages?.[0]?.id}`);
+        const messageData = {
+            id: response.data.messages[0].id,
+            content: message,
+            timestamp: new Date(),
+            status: "sent",
+            customerId: session.customerId,
+            sessionId
+        };
 
-        session.ownerMessageId = response.data.messages?.[0]?.id;
-        session.messages.push({ sender: "user", message });
+        // Update session data
+        session.ownerMessageId = messageData.id;
+        session.messages.push(messageData);
+        session.lastActivity = new Date();
 
-        res.status(200).json({ success: true });
+        console.log(`[STATUS] Message ${messageData.id} sent successfully`);
+
+        res.status(200).json({ 
+            success: true, 
+            messageId: messageData.id,
+            customerId: session.customerId
+        });
+
     } catch (error) {
-        console.error("[ERROR] Failed to send message:", JSON.stringify(error.response?.data || error.message, null, 2));
-        res.status(500).json({ error: "Failed to send message", details: error.response?.data || error.message });
+        console.error(`[ERROR] Failed to send message: ${error.response?.data || error.message}`);
+
+        // Handle "Re-engagement message" error (error code 131047)
+        if (error.response?.data?.errors?.[0]?.code === 131047) {
+            console.log("[TEMPLATE] Attempting to send re-engagement template...");
+
+            try {
+                // Step 1: Send the template message
+                // Modify template sending to include US-specific parameters
+const templateResponse = await axios.post(WHATSAPP_API_URL, {
+    messaging_product: "whatsapp",
+    to: OWNER_PHONE_NUMBER,
+    type: "template",
+    template: {
+        name: "hello_world",
+        language: { code: "en_US" },
+        components: [{
+            type: "body",
+            parameters: [{ type: "text", text: session.customerId }]
+        }]
+    }
+}, {
+    headers: {
+        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        "X-US-Number": "true" // Custom header for US handling
     }
 });
 
+                console.log("[TEMPLATE] Template sent successfully: ", templateResponse.data);
+
+                // Step 2: Wait 3 seconds before retrying the original message
+                setTimeout(async () => {
+                    try {
+                        console.log("[RETRY] Retrying message after template...");
+
+                        const retryResponse = await axios.post(WHATSAPP_API_URL, {
+                            messaging_product: "whatsapp",
+                            to: OWNER_PHONE_NUMBER,
+                            type: "text",
+                            text: { body: trackedMessage }
+                        }, { 
+                            headers: { 
+                                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                                "X-Debug-Session": sessionId
+                            } 
+                        });
+
+                        console.log("[RETRY] Message sent successfully after template:", retryResponse.data);
+
+                        res.status(200).json({ 
+                            success: true, 
+                            messageId: retryResponse.data.messages[0].id,
+                            customerId: session.customerId,
+                            isTemplate: true // Indicates a template was used
+                        });
+
+                    } catch (retryError) {
+                        console.error("[RETRY ERROR] Failed to send message after template:", retryError.response?.data || retryError.message);
+                        res.status(500).json({
+                            error: "Message could not be sent after template",
+                            details: retryError.response?.data || retryError.message
+                        });
+                    }
+                }, 3000); // Delay before retrying the original message
+
+            } catch (templateError) {
+                console.error("[TEMPLATE ERROR] Failed to send template:", templateError.response?.data || templateError.message);
+                res.status(500).json({
+                    error: "Failed to send template message",
+                    details: templateError.response?.data || templateError.message
+                });
+            }
+
+        } else {
+            // Handle other errors
+            res.status(500).json({ 
+                error: "Failed to send message",
+                details: error.response?.data || error.message 
+            });
+        }
+    }
+});
 
 // Webhook verification (GET method)
 app.get("/webhook", (req, res) => {
