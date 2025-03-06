@@ -112,10 +112,10 @@ const Chatbot: React.FC = () => {
     // Send message to backend
     const handleSend = async (): Promise<void> => {
         if (!message.trim() || isSending) return;
-    
+
         setIsSending(true);
         const messageId = uuidv4();
-    
+
         try {
             const newMessage: ChatMessage = {
                 id: messageId,
@@ -124,27 +124,27 @@ const Chatbot: React.FC = () => {
                 status: "sent",
                 customerId,
                 timestamp: new Date(),
-                isTemplate: true
+                isTemplate: true // Mark as template message
             };
-    
+
             setChat((prev) => [...prev, newMessage]);
             setMessage("");
             setAwaitingReply(true);
-    
+
             await axios.post(`${B_url}/send-message`, {
                 sessionId,
                 message,
-                customerId
+                customerId,
             });
-    
-            console.log(`[FRONTEND] Message sent: ${message}`);
+
+            console.log(`[FRONTEND] Template message sent: ${message}`);
+            // playSound();
         } catch (error) {
-            console.error("[FRONTEND] Error sending message:", error);
+            console.error("[FRONTEND] Error sending template message:", error);
         } finally {
             setIsSending(false);
         }
     };
-    
 
     // Clear chat session
     const clearSession = (): void => {
@@ -212,14 +212,14 @@ const Chatbot: React.FC = () => {
                                     transition={{ duration: 0.3, ease: "easeOut" }}
                                     className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(msg.sender)}`}
                                 >
-                                    {msg.message}
-                                    {/* {msg.sender === "user" && (
-                                        <div className="text-xs text-gray-200 mt-1">
-                                            Status: {msg.status || "sent"}
+                                    {msg.isTemplate ? (
+                                        <div>
+                                            <strong>Template Message:</strong> {msg.message}
                                         </div>
-                                    )} */}
+                                    ) : (
+                                        msg.message
+                                    )}
                                 </motion.div>
-
                             ))}
                             {awaitingReply && (
                                 <div className="p-2 my-1 max-w-[75%] bg-gray-200 text-gray-700 mr-auto rounded-bl-lg rounded-tr-lg rounded-br-lg">
