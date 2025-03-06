@@ -161,44 +161,58 @@ app.post("/webhook", async (req, res) => {
                 for (const change of entry.changes) {
                     if (change.value.messages) {
                         for (const msg of change.value.messages) {
-                            const replyMessage = msg.text?.body; // Extract reply message
-                            const originalMessageId = msg.context?.id; // Reference to original message
-                            const templateUsed = msg.type === "template";
+                            if (msg.type === "text") {
+                                const replyMessage = msg.text.body;
+                                const originalMessageId = msg.context?.id;
 
-                            console.log(`[INCOMING] Reply received: ${replyMessage}`);
+                                console.log(`[INCOMING] Reply received: ${replyMessage}`);
 
-                            let targetSessionId = null;
-                            for (const [sessionId, session] of userSessions.entries()) {
-                                if (session.ownerMessageIds?.includes(originalMessageId)) {
-                                    targetSessionId = sessionId;
-                                    break;
+                                let targetSessionId = null;
+                                for (const [sessionId, session] of userSessions.entries()) {
+                                    if (session.ownerMessageIds?.includes(originalMessageId)) {
+                                        targetSessionId = sessionId;
+                                        break;
+                                    }
                                 }
-                            }
 
-                            if (targetSessionId) {
-                                const session = userSessions.get(targetSessionId);
+                                if (targetSessionId) {
+                                    const session = userSessions.get(targetSessionId);
 
-                                const replyData = {
-                                    id: uuidv4(),
-                                    sender: "owner",
-                                    message: replyMessage,
-                                    timestamp: new Date(),
-                                    status: "delivered",
-                                    customerId: session.customerId,
-                                    sessionId: targetSessionId,
-                                    inReplyTo: originalMessageId,
-                                    isTemplate: templateUsed
-                                };
+                                    // Send owner response using "owner_response_2" template
+                                    await axios.post(WHATSAPP_API_URL, {
+                                        messaging_product: "whatsapp",
+                                        to: session.customerId, 
+                                        type: "template",
+                                        template: {
+                                            name: "owner_response",
+                                            language: { code: "en_US" },
+                                            components: [{
+                                                type: "body",
+                                                parameters: [{ type: "text", text: replyMessage }]
+                                            }]
+                                        }
+                                    }, {
+                                        headers: {
+                                            Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`
+                                        }
+                                    });
 
-                                // Store owner's reply
-                                session.messages.push(replyData);
-                                session.lastActivity = new Date();
+                                    const replyData = {
+                                        id: uuidv4(),
+                                        sender: "owner",
+                                        message: replyMessage,
+                                        timestamp: new Date(),
+                                        status: "delivered",
+                                        customerId: session.customerId,
+                                        sessionId: targetSessionId,
+                                        inReplyTo: originalMessageId
+                                    };
 
-                                // **Emit to WebSocket so chatbot UI updates**
-                                io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
-                                console.log(`[SOCKET] Sent update to session: ${targetSessionId}`);
-                            } else {
-                                console.warn(`[WARNING] No session found for message ID: ${originalMessageId}`);
+                                    session.messages.push(replyData);
+                                    session.lastActivity = new Date();
+
+                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
+                                }
                             }
                         }
                     }
@@ -211,7 +225,6 @@ app.post("/webhook", async (req, res) => {
         res.status(500).send("Webhook processing failed");
     }
 });
-
 
 function updateMessageStatus(messageId, status) {
     for (const [sessionId, session] of userSessions.entries()) {
