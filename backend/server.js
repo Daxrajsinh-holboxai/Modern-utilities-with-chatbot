@@ -93,7 +93,7 @@ app.post("/send-message", async (req, res) => {
             type: "template",
             template: {
                 name: "customer_message_2",
-                language: { code: "en_US" },
+                language: { code: "en" },
                 components: [{
                     type: "body",
                     parameters: [
@@ -185,7 +185,7 @@ app.post("/webhook", async (req, res) => {
                                         type: "template",
                                         template: {
                                             name: "owner_response_2",
-                                            language: { code: "en_US" },
+                                            language: { code: "en" },
                                             components: [{
                                                 type: "body",
                                                 parameters: [{ type: "text", text: replyMessage }]
