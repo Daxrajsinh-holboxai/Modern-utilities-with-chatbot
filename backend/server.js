@@ -92,8 +92,8 @@ app.post("/send-message", async (req, res) => {
             to: OWNER_PHONE_NUMBER,
             type: "template",
             template: {
-                name: "customer_message_2",
-                language: { code: "en" },
+                name: "customer_message",
+                language: { code: "en_US" },
                 components: [{
                     type: "body",
                     parameters: [
@@ -184,8 +184,8 @@ app.post("/webhook", async (req, res) => {
                                         to: session.customerId, 
                                         type: "template",
                                         template: {
-                                            name: "owner_response_2",
-                                            language: { code: "en" },
+                                            name: "owner_response",
+                                            language: { code: "en_US" },
                                             components: [{
                                                 type: "body",
                                                 parameters: [{ type: "text", text: replyMessage }]
