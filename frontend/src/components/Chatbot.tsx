@@ -3,7 +3,6 @@ import io from "socket.io-client";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { MessageCircle, X, Send, Trash2 } from "lucide-react";
-// import notificationSound from "../assets/notification.mp3"; // Ensure this file exists
 
 // Define types for chat messages
 interface ChatMessage {
@@ -13,7 +12,7 @@ interface ChatMessage {
     status?: "sent" | "delivered" | "read";
     customerId?: string;
     timestamp?: Date;
-    isTemplate?: boolean; // Add this
+    isTemplate?: boolean;
 }
 
 const B_url: string = import.meta.env.VITE_URL || "http://localhost:5000";
@@ -31,9 +30,7 @@ const uuidv4 = () => {
 const Chatbot: React.FC = () => {
     const [sessionId, setSessionId] = useState<string>(localStorage.getItem("sessionId") || "");
     const [customerId, setCustomerId] = useState<string>(localStorage.getItem("customerId") || "");
-    // frontend.tsx (modify useState initialization)
     const [chat, setChat] = useState<ChatMessage[]>(() => {
-        // Fix greeting message logic
         const storedChat = localStorage.getItem("chat");
         if (!storedChat) {
             return [{
@@ -49,7 +46,6 @@ const Chatbot: React.FC = () => {
     const [isSending, setIsSending] = useState<boolean>(false);
     const [awaitingReply, setAwaitingReply] = useState<boolean>(false);
     const chatEndRef = useRef<HTMLDivElement | null>(null);
-    // const audioRef = useRef(new Audio(notificationSound));
 
     // Initialize session and socket connection
     useEffect(() => {
@@ -70,10 +66,9 @@ const Chatbot: React.FC = () => {
             const handleUpdate = (newMessages: ChatMessage[]) => {
                 console.log("[FRONTEND] Received update:", newMessages);
                 setChat((prev) => {
-                    // Merge new messages with existing ones, avoiding duplicates
                     const merged = [...prev];
                     newMessages.forEach((newMsg) => {
-                        if (!merged.some((m) => m.id === newMsg.id)) {
+                        if (newMsg.message?.trim() && !merged.some((m) => m.id === newMsg.id)) {
                             merged.push(newMsg);
                         }
                     });
@@ -100,17 +95,13 @@ const Chatbot: React.FC = () => {
     useEffect(() => {
         setTimeout(() => {
             setIsOpen(true);
-        }, 1000); // 1-second delay before opening
+        }, 1000);
     }, []);
-
-    // Play notification sound
-    // const playSound = () => {
-    //     audioRef.current.play();
-    // };
 
     // Send message to backend
     const handleSend = async (): Promise<void> => {
-        if (!message.trim() || isSending) return;
+        const trimmedMessage = message.trim();
+        if (!trimmedMessage || isSending) return;
 
         setIsSending(true);
         const messageId = uuidv4();
@@ -119,11 +110,11 @@ const Chatbot: React.FC = () => {
             const newMessage: ChatMessage = {
                 id: messageId,
                 sender: "user",
-                message,
+                message: trimmedMessage,
                 status: "sent",
                 customerId,
                 timestamp: new Date(),
-                isTemplate: true // Mark as template message
+                isTemplate: true
             };
 
             setChat((prev) => [...prev, newMessage]);
@@ -132,12 +123,11 @@ const Chatbot: React.FC = () => {
 
             await axios.post(`${B_url}/send-message`, {
                 sessionId,
-                message,
+                message: trimmedMessage,
                 customerId,
             });
 
-            console.log(`[FRONTEND] Template message sent: ${message}`);
-            // playSound();
+            console.log(`[FRONTEND] Template message sent: ${trimmedMessage}`);
         } catch (error) {
             console.error("[FRONTEND] Error sending template message:", error);
         } finally {
@@ -172,7 +162,6 @@ const Chatbot: React.FC = () => {
     return (
         <section id="chatbot">
             <div className="fixed bottom-4 right-4 sm:right-10 md:right-10 flex flex-col items-end z-50">
-                {/* Floating button to open chat */}
                 {!isOpen && (
                     <motion.button
                         onClick={() => setIsOpen(true)}
@@ -185,7 +174,6 @@ const Chatbot: React.FC = () => {
                     </motion.button>
                 )}
 
-                {/* Chat window with bounce effect */}
                 {isOpen && (
                     <motion.div
                         initial={{ opacity: 0, scale: 0.8, y: 20 }}
@@ -193,7 +181,6 @@ const Chatbot: React.FC = () => {
                         transition={{ duration: 0.5, ease: "easeOut", type: "spring", stiffness: 120 }}
                         className="flex flex-col w-72 sm:w-80 max-w-full h-80 sm:h-96 bg-gray-900 dark:bg-gray-900 border border-gray-700 rounded-lg shadow-lg overflow-hidden"
                     >
-                        {/* Header */}
                         <div className="flex items-center justify-between bg-gradient-to-r from-green-500 to-green-600 text-white px-3 sm:px-4 py-2">
                             <h2 className="font-bold text-sm sm:text-lg">Chat Support</h2>
                             <button onClick={() => setIsOpen(false)} className="text-white focus:outline-none hover:scale-110 transition-transform">
@@ -201,7 +188,6 @@ const Chatbot: React.FC = () => {
                             </button>
                         </div>
 
-                        {/* Messages area */}
                         <div className="flex-1 flex flex-col space-y-2 p-2 sm:p-3 overflow-y-auto">
                             {chat.map((msg) => (
                                 <motion.div
@@ -211,13 +197,7 @@ const Chatbot: React.FC = () => {
                                     transition={{ duration: 0.3, ease: "easeOut" }}
                                     className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(msg.sender)}`}
                                 >
-                                    {msg.isTemplate ? (
-                                        <div>
-                                            <strong>Template Message:</strong> {msg.message}
-                                        </div>
-                                    ) : (
-                                        msg.message
-                                    )}
+                                    {msg.message}
                                 </motion.div>
                             ))}
                             {awaitingReply && (
@@ -235,7 +215,6 @@ const Chatbot: React.FC = () => {
                             <div ref={chatEndRef} />
                         </div>
 
-                        {/* Input and Clear Chat Row */}
                         <div className="border-t border-gray-700 bg-gray-900 p-2 flex items-center space-x-1 sm:space-x-2">
                             <input
                                 value={message}
