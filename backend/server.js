@@ -86,35 +86,25 @@ app.post("/send-message", async (req, res) => {
         const session = userSessions.get(sessionId);
         if (!session) return res.status(404).json({ error: "Session not found" });
 
-        // Check if template is needed (24-hour window expired)
-        const hoursSinceLast = (new Date() - session.lastActivity) / 3600000;
-        if (hoursSinceLast > 24) {
-            // Store pending messages
-            session.pendingMessages = [...(session.pendingMessages || []), message];
-            
-            // Send template
-            await sendTemplateMessage();
-            
-            // Return special status
-            return res.status(202).json({ // 202 Accepted
-                status: "pending_template",
-                customerId: session.customerId
-            });
-        }
-
-        // If within 24-hour window, send normal message
-        const trackedMessage = `[Customer ${session.customerId}]\n${message}`;
-        console.log(`[OUTGOING] Sending message from ${session.customerId}: ${message}`);
-
+        // Send message using the "customer_message_2" template
         const response = await axios.post(WHATSAPP_API_URL, {
             messaging_product: "whatsapp",
             to: OWNER_PHONE_NUMBER,
-            type: "text",
-            text: { body: trackedMessage }
+            type: "template",
+            template: {
+                name: "customer_message_2",
+                language: { code: "en_US" },
+                components: [{
+                    type: "body",
+                    parameters: [
+                        { type: "text", text: customerId },
+                        { type: "text", text: message }
+                    ]
+                }]
+            }
         }, {
             headers: {
-                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-                "X-Debug-Session": sessionId
+                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`
             }
         });
 
@@ -123,32 +113,29 @@ app.post("/send-message", async (req, res) => {
             content: message,
             timestamp: new Date(),
             status: "sent",
-            customerId: session.customerId,
+            customerId,
             sessionId
         };
 
-        // Update session
-        session.ownerMessageIds = [...(session.ownerMessageIds || []), messageData.id]; // Track all message IDs
+        session.ownerMessageIds = [...(session.ownerMessageIds || []), messageData.id];
         session.messages.push(messageData);
         session.lastActivity = new Date();
-
-        console.log(`[STATUS] Message ${messageData.id} sent successfully`);
-        console.log(`[DEBUG] WhatsApp API Response:`, response.data);
 
         res.status(200).json({
             success: true,
             messageId: messageData.id,
-            customerId: session.customerId
+            customerId
         });
 
     } catch (error) {
-        console.error(`[ERROR] Failed to send message: ${error.response?.data || error.message}`);
+        console.error(`[ERROR] Failed to send message:`, error.response?.data || error.message);
         res.status(500).json({
             error: "Failed to send message",
             details: error.response?.data || error.message
         });
     }
 });
+
 
 // Add endpoint to handle template responses
 app.post("/handle-template-response", async (req, res) => {
@@ -164,7 +151,6 @@ app.post("/handle-template-response", async (req, res) => {
     }
 });
 
-// Webhook verification (GET method)
 app.post("/webhook", async (req, res) => {
     const body = req.body;
     console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
@@ -175,23 +161,11 @@ app.post("/webhook", async (req, res) => {
                 for (const change of entry.changes) {
                     if (change.value.messages) {
                         for (const msg of change.value.messages) {
-                            const context = msg.context;
-                            const statuses = change.value.statuses;
-
-                            if (statuses) {
-                                // Handle message status updates
-                                for (const status of statuses) {
-                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
-                                    updateMessageStatus(status.id, status.status);
-                                }
-                            }
-
-                            if (context) {
-                                // Handle owner replies
-                                const originalMessageId = context.id;
+                            if (msg.type === "text") {
                                 const replyMessage = msg.text.body;
+                                const originalMessageId = msg.context?.id;
 
-                                console.log(`[INCOMING] Reply received for message ${originalMessageId}: ${replyMessage}`);
+                                console.log(`[INCOMING] Reply received: ${replyMessage}`);
 
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
@@ -203,6 +177,26 @@ app.post("/webhook", async (req, res) => {
 
                                 if (targetSessionId) {
                                     const session = userSessions.get(targetSessionId);
+
+                                    // Send owner response using "owner_response_2" template
+                                    await axios.post(WHATSAPP_API_URL, {
+                                        messaging_product: "whatsapp",
+                                        to: session.customerId, 
+                                        type: "template",
+                                        template: {
+                                            name: "owner_response_2",
+                                            language: { code: "en_US" },
+                                            components: [{
+                                                type: "body",
+                                                parameters: [{ type: "text", text: replyMessage }]
+                                            }]
+                                        }
+                                    }, {
+                                        headers: {
+                                            Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`
+                                        }
+                                    });
+
                                     const replyData = {
                                         id: uuidv4(),
                                         sender: "owner",
@@ -214,87 +208,9 @@ app.post("/webhook", async (req, res) => {
                                         inReplyTo: originalMessageId
                                     };
 
-                                    // Store reply with original message context
                                     session.messages.push(replyData);
                                     session.lastActivity = new Date();
 
-                                    // Notify all clients
-                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
-                                    console.log(`[SOCKET] Emitted update to session ${targetSessionId}`);
-                                } else {
-                                    console.warn(`[WARNING] No session found for message ID: ${originalMessageId}`);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        res.sendStatus(200);
-    } catch (error) {
-        console.error("[WEBHOOK ERROR]", error);
-        res.status(500).send("Webhook processing failed");
-    }
-});
-
-// Enhanced webhook handler with delivery status (POST method)
-app.post("/webhook", async (req, res) => {
-    const body = req.body;
-    console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
-
-    try {
-        if (body.object && body.entry) {
-            for (const entry of body.entry) {
-                for (const change of entry.changes) {
-                    if (change.value.messages) {
-                        for (const msg of change.value.messages) {
-                            const context = msg.context;
-                            const statuses = change.value.statuses;
-
-                            if (statuses) {
-                                // Handle message status updates
-                                for (const status of statuses) {
-                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
-                                    updateMessageStatus(status.id, status.status);
-                                }
-                            }
-
-                            if (context) {
-                                // Handle owner replies
-                                const originalMessageId = context.id;
-                                const replyMessage = msg.text.body;
-
-                                console.log(`[INCOMING] Reply received for message ${originalMessageId}`);
-
-                                let targetSessionId = null;
-                                for (const [sessionId, session] of userSessions.entries()) {
-                                    if (session.ownerMessageIds?.includes(originalMessageId)) {
-                                        targetSessionId = sessionId;
-                                        break;
-                                    }
-                                }
-
-                                if (targetSessionId) {
-                                    const session = userSessions.get(targetSessionId);
-                                    const replyData = {
-                                        id: uuidv4(),
-                                        message: replyMessage,
-                                        timestamp: new Date(),
-                                        status: "delivered",
-                                        customerId: session.customerId,
-                                        sessionId: targetSessionId,
-                                        inReplyTo: originalMessageId
-                                    };
-
-                                    // Store reply with original message context
-                                    session.messages = session.messages.map(msg => {
-                                        if (msg.id === originalMessageId) {
-                                            return { ...msg, reply: replyData };
-                                        }
-                                        return msg;
-                                    });
-
-                                    // Notify all clients
                                     io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
                                 }
                             }

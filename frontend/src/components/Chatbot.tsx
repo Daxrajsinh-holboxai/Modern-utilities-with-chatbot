@@ -112,10 +112,10 @@ const Chatbot: React.FC = () => {
     // Send message to backend
     const handleSend = async (): Promise<void> => {
         if (!message.trim() || isSending) return;
-
+    
         setIsSending(true);
         const messageId = uuidv4();
-
+    
         try {
             const newMessage: ChatMessage = {
                 id: messageId,
@@ -124,26 +124,27 @@ const Chatbot: React.FC = () => {
                 status: "sent",
                 customerId,
                 timestamp: new Date(),
+                isTemplate: true
             };
-
+    
             setChat((prev) => [...prev, newMessage]);
             setMessage("");
             setAwaitingReply(true);
-
+    
             await axios.post(`${B_url}/send-message`, {
                 sessionId,
                 message,
-                customerId,
+                customerId
             });
-
+    
             console.log(`[FRONTEND] Message sent: ${message}`);
-            // playSound();
         } catch (error) {
             console.error("[FRONTEND] Error sending message:", error);
         } finally {
             setIsSending(false);
         }
     };
+    
 
     // Clear chat session
     const clearSession = (): void => {
