@@ -184,7 +184,7 @@ app.post("/webhook", async (req, res) => {
                                 const originalMessageId = context.id;
                                 const replyMessage = msg.text.body;
 
-                                console.log(`[INCOMING] Reply received for message ${originalMessageId}`);
+                                console.log(`[INCOMING] Reply received for message ${originalMessageId}: ${replyMessage}`);
 
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
@@ -198,6 +198,7 @@ app.post("/webhook", async (req, res) => {
                                     const session = userSessions.get(targetSessionId);
                                     const replyData = {
                                         id: uuidv4(),
+                                        sender: "owner",
                                         message: replyMessage,
                                         timestamp: new Date(),
                                         status: "delivered",
@@ -207,16 +208,15 @@ app.post("/webhook", async (req, res) => {
                                         isTemplate: true // Mark as template message
                                     };
 
-                                    // Store reply with original message context
-                                    session.messages = session.messages.map(msg => {
-                                        if (msg.id === originalMessageId) {
-                                            return { ...msg, reply: replyData };
-                                        }
-                                        return msg;
-                                    });
+                                    // Append the reply to the session's messages
+                                    session.messages.push(replyData);
+                                    session.lastActivity = new Date();
 
                                     // Notify all clients
                                     io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
+                                    console.log(`[SOCKET] Emitted update to session ${targetSessionId}`);
+                                } else {
+                                    console.warn(`[WARNING] No session found for message ID: ${originalMessageId}`);
                                 }
                             }
                         }

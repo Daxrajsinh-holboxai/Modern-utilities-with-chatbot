@@ -69,12 +69,11 @@ const Chatbot: React.FC = () => {
 
             const handleUpdate = (newMessages: ChatMessage[]) => {
                 console.log("[FRONTEND] Received update:", newMessages);
-                // Merge new messages with existing ones
-                setChat(prev => {
-                    const filteredMessages = newMessages.filter(msg => msg.message && msg.message.trim().length > 0);
+                setChat((prev) => {
+                    // Merge new messages with existing ones, avoiding duplicates
                     const merged = [...prev];
-                    filteredMessages.forEach(newMsg => {
-                        if (!merged.some(m => m.id === newMsg.id)) {
+                    newMessages.forEach((newMsg) => {
+                        if (!merged.some((m) => m.id === newMsg.id)) {
                             merged.push(newMsg);
                         }
                     });
