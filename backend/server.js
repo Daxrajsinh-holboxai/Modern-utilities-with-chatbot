@@ -171,21 +171,34 @@ app.post("/webhook", async (req, res) => {
                             const context = msg.context;
                             const statuses = change.value.statuses;
 
+                            // Handle message status updates
                             if (statuses) {
-                                // Handle message status updates
                                 for (const status of statuses) {
                                     console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
                                     updateMessageStatus(status.id, status.status);
                                 }
                             }
 
+                            // Handle message content
                             if (context) {
-                                // Handle owner replies
                                 const originalMessageId = context.id;
-                                const replyMessage = msg.text.body;
+                                let replyMessage = '';
+
+                                // Extract message content based on type
+                                if (msg.text) {
+                                    replyMessage = msg.text.body;
+                                } else if (msg.image) {
+                                    replyMessage = "[Image]"; // Or handle image URL
+                                } else if (msg.document) {
+                                    replyMessage = "[Document]";
+                                } else {
+                                    console.log("Unsupported message type:", msg.type);
+                                    continue;
+                                }
 
                                 console.log(`[INCOMING] Reply received for message ${originalMessageId}: ${replyMessage}`);
 
+                                // Find target session
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
                                     if (session.ownerMessageIds?.includes(originalMessageId)) {
@@ -205,14 +218,12 @@ app.post("/webhook", async (req, res) => {
                                         customerId: session.customerId,
                                         sessionId: targetSessionId,
                                         inReplyTo: originalMessageId,
-                                        isTemplate: true // Mark as template message
+                                        isTemplate: true
                                     };
 
-                                    // Append the reply to the session's messages
                                     session.messages.push(replyData);
                                     session.lastActivity = new Date();
 
-                                    // Notify all clients
                                     io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
                                     console.log(`[SOCKET] Emitted update to session ${targetSessionId}`);
                                 } else {

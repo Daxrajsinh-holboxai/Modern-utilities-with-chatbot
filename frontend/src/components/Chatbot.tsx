@@ -9,6 +9,10 @@ interface ChatMessage {
     id: string;
     sender: "bot" | "user" | "owner";
     message: string;
+    media?: {
+        type: 'image' | 'document' | 'video';
+        url?: string;
+    };
     status?: "sent" | "delivered" | "read";
     customerId?: string;
     timestamp?: Date;
@@ -197,7 +201,18 @@ const Chatbot: React.FC = () => {
                                     transition={{ duration: 0.3, ease: "easeOut" }}
                                     className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(msg.sender)}`}
                                 >
-                                    {msg.message}
+                                    {msg.media ? (
+                                        <div className="media-message">
+                                            {msg.media.type === 'image' && (
+                                                <img src={msg.media.url} alt="Received content" />
+                                            )}
+                                            {msg.media.type === 'document' && (
+                                                <a href={msg.media.url} download>Download Document</a>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="text-message">{msg.message}</div>
+                                    )}
                                 </motion.div>
                             ))}
                             {awaitingReply && (
