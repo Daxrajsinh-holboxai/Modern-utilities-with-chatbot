@@ -171,34 +171,38 @@ app.post("/webhook", async (req, res) => {
                             const context = msg.context;
                             const statuses = change.value.statuses;
 
-                            // Handle message status updates
                             if (statuses) {
                                 for (const status of statuses) {
-                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
                                     updateMessageStatus(status.id, status.status);
                                 }
                             }
 
-                            // Handle message content
                             if (context) {
                                 const originalMessageId = context.id;
-                                let replyMessage = '';
+                                let replyContent = {
+                                    text: '',
+                                    media: null
+                                };
 
-                                // Extract message content based on type
+                                // Handle different message types
                                 if (msg.text) {
-                                    replyMessage = msg.text.body;
+                                    replyContent.text = msg.text.body;
                                 } else if (msg.image) {
-                                    replyMessage = "[Image]"; // Or handle image URL
-                                } else if (msg.document) {
-                                    replyMessage = "[Document]";
-                                } else {
-                                    console.log("Unsupported message type:", msg.type);
-                                    continue;
+                                    // Get media URL from WhatsApp API
+                                    const mediaResponse = await axios.get(
+                                        `${WHATSAPP_API_URL}/${msg.image.id}`,
+                                        {
+                                            headers: {
+                                                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`
+                                            }
+                                        }
+                                    );
+                                    replyContent.media = {
+                                        type: 'image',
+                                        url: mediaResponse.data.url
+                                    };
                                 }
 
-                                console.log(`[INCOMING] Reply received for message ${originalMessageId}: ${replyMessage}`);
-
-                                // Find target session
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
                                     if (session.ownerMessageIds?.includes(originalMessageId)) {
@@ -212,7 +216,8 @@ app.post("/webhook", async (req, res) => {
                                     const replyData = {
                                         id: uuidv4(),
                                         sender: "owner",
-                                        message: replyMessage,
+                                        message: replyContent.text,
+                                        media: replyContent.media,
                                         timestamp: new Date(),
                                         status: "delivered",
                                         customerId: session.customerId,
@@ -225,9 +230,6 @@ app.post("/webhook", async (req, res) => {
                                     session.lastActivity = new Date();
 
                                     io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
-                                    console.log(`[SOCKET] Emitted update to session ${targetSessionId}`);
-                                } else {
-                                    console.warn(`[WARNING] No session found for message ID: ${originalMessageId}`);
                                 }
                             }
                         }
