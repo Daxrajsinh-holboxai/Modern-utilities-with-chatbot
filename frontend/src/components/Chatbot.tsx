@@ -9,6 +9,10 @@ interface ChatMessage {
     id: string;
     sender: "bot" | "user" | "owner";
     message: string;
+    media?: {
+        type: 'image' | 'document' | 'video';
+        url: string;
+    };
     status?: "sent" | "delivered" | "read";
     customerId?: string;
     timestamp?: Date;
@@ -189,17 +193,37 @@ const Chatbot: React.FC = () => {
                         </div>
 
                         <div className="flex-1 flex flex-col space-y-2 p-2 sm:p-3 overflow-y-auto">
-                            {chat.map((msg) => (
-                                <motion.div
-                                    key={msg.id}
-                                    initial={{ opacity: 0, x: msg.sender === "user" ? 50 : -50 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ duration: 0.3, ease: "easeOut" }}
-                                    className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(msg.sender)}`}
-                                >
-                                    {msg.message}
-                                </motion.div>
-                            ))}
+                        {chat.map((msg) => (
+    <motion.div
+        key={msg.id}
+        initial={{ opacity: 0, x: msg.sender === "user" ? 50 : -50 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className={`px-2 sm:px-3 py-1 sm:py-2 max-w-[85%] rounded-md text-xs sm:text-sm break-words ${getMessageClasses(msg.sender)}`}
+    >
+        {msg.media?.type === 'image' ? (
+            <div className="relative group">
+                <img 
+                    src={msg.media.url} 
+                    alt="Received content"
+                    className="rounded-lg max-w-full h-auto cursor-pointer"
+                />
+                <div className="absolute inset-0 bg-black bg-opacity-50 hidden group-hover:flex items-center justify-center rounded-lg">
+                    <a 
+                        href={msg.media.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-white text-sm px-3 py-1 bg-green-500 rounded hover:bg-green-600"
+                    >
+                        Open Full Size
+                    </a>
+                </div>
+            </div>
+        ) : (
+            <div>{msg.message}</div>
+        )}
+    </motion.div>
+))}
                             {awaitingReply && (
                                 <div className="p-2 my-1 max-w-[75%] bg-gray-200 text-gray-700 mr-auto rounded-bl-lg rounded-tr-lg rounded-br-lg">
                                     <div className="flex items-center justify-between">

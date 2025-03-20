@@ -172,19 +172,36 @@ app.post("/webhook", async (req, res) => {
                             const statuses = change.value.statuses;
 
                             if (statuses) {
-                                // Handle message status updates
                                 for (const status of statuses) {
-                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
                                     updateMessageStatus(status.id, status.status);
                                 }
                             }
 
                             if (context) {
-                                // Handle owner replies
                                 const originalMessageId = context.id;
-                                const replyMessage = msg.text.body;
+                                let replyContent = {
+                                    text: '',
+                                    media: null
+                                };
 
-                                console.log(`[INCOMING] Reply received for message ${originalMessageId}: ${replyMessage}`);
+                                // Handle different message types
+                                if (msg.text) {
+                                    replyContent.text = msg.text.body;
+                                } else if (msg.image) {
+                                    // Get media URL from WhatsApp API
+                                    const mediaResponse = await axios.get(
+                                        `${WHATSAPP_API_URL}/${msg.image.id}`,
+                                        {
+                                            headers: {
+                                                Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`
+                                            }
+                                        }
+                                    );
+                                    replyContent.media = {
+                                        type: 'image',
+                                        url: mediaResponse.data.url
+                                    };
+                                }
 
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
@@ -199,16 +216,16 @@ app.post("/webhook", async (req, res) => {
                                     const replyData = {
                                         id: uuidv4(),
                                         sender: "owner",
-                                        message: replyMessage,
+                                        message: replyContent.text,
+                                        media: replyContent.media,
                                         timestamp: new Date(),
                                         status: "delivered",
                                         customerId: session.customerId,
                                         sessionId: targetSessionId,
-                                        inReplyTo: originalMessageId,
-                                        isTemplate: true // Mark as template message
+                                        inReplyTo: originalMessageId
                                     };
 
-                                    // Append the reply to the session's messages
+                                    // Store reply with original message context
                                     session.messages.push(replyData);
                                     session.lastActivity = new Date();
 
@@ -217,6 +234,79 @@ app.post("/webhook", async (req, res) => {
                                     console.log(`[SOCKET] Emitted update to session ${targetSessionId}`);
                                 } else {
                                     console.warn(`[WARNING] No session found for message ID: ${originalMessageId}`);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        res.sendStatus(200);
+    } catch (error) {
+        console.error("[WEBHOOK ERROR]", error);
+        res.status(500).send("Webhook processing failed");
+    }
+});
+
+// Enhanced webhook handler with delivery status (POST method...)
+app.post("/webhook", async (req, res) => {
+    const body = req.body;
+    console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
+
+    try {
+        if (body.object && body.entry) {
+            for (const entry of body.entry) {
+                for (const change of entry.changes) {
+                    if (change.value.messages) {
+                        for (const msg of change.value.messages) {
+                            const context = msg.context;
+                            const statuses = change.value.statuses;
+
+                            if (statuses) {
+                                // Handle message status updates
+                                for (const status of statuses) {
+                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
+                                    updateMessageStatus(status.id, status.status);
+                                }
+                            }
+
+                            if (context) {
+                                // Handle owner replies
+                                const originalMessageId = context.id;
+                                const replyMessage = msg.text.body;
+
+                                console.log(`[INCOMING] Reply received for message ${originalMessageId}`);
+
+                                let targetSessionId = null;
+                                for (const [sessionId, session] of userSessions.entries()) {
+                                    if (session.ownerMessageIds?.includes(originalMessageId)) {
+                                        targetSessionId = sessionId;
+                                        break;
+                                    }
+                                }
+
+                                if (targetSessionId) {
+                                    const session = userSessions.get(targetSessionId);
+                                    const replyData = {
+                                        id: uuidv4(),
+                                        message: replyMessage,
+                                        timestamp: new Date(),
+                                        status: "delivered",
+                                        customerId: session.customerId,
+                                        sessionId: targetSessionId,
+                                        inReplyTo: originalMessageId
+                                    };
+
+                                    // Store reply with original message context
+                                    session.messages = session.messages.map(msg => {
+                                        if (msg.id === originalMessageId) {
+                                            return { ...msg, reply: replyData };
+                                        }
+                                        return msg;
+                                    });
+
+                                    // Notify all clients
+                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
                                 }
                             }
                         }
