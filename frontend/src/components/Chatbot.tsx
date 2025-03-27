@@ -68,14 +68,21 @@ const Chatbot: React.FC = () => {
             socket.emit("join", sessionId);
 
             const handleUpdate = (newMessages: ChatMessage[]) => {
-                console.log("[FRONTEND] Received update:", newMessages);
+                console.log("[FRONTEND] Received update via socket:", {
+                    newMessagesCount: newMessages.length,
+                    lastMessage: newMessages[newMessages.length - 1]
+                });
+                
                 setChat((prev) => {
                     const merged = [...prev];
                     newMessages.forEach((newMsg) => {
-                        if (newMsg.message?.trim() && !merged.some((m) => m.id === newMsg.id)) {
+                        const exists = merged.some(m => m.id === newMsg.id);
+                        console.log(`[MERGE] Checking message ${newMsg.id} (exists: ${exists})`);
+                        if (newMsg.message?.trim() && !exists) {
                             merged.push(newMsg);
                         }
                     });
+                    console.log("[MERGE] New chat state:", merged);
                     return merged;
                 });
                 setAwaitingReply(false);
@@ -88,6 +95,15 @@ const Chatbot: React.FC = () => {
             };
         }
     }, [sessionId]);
+
+    useEffect(() => {
+        socket.on("connect", () => {
+            console.log("[SOCKET.IO] Connected with ID:", socket.id);
+        });
+        socket.on("disconnect", () => {
+            console.log("[SOCKET.IO] Disconnected");
+        });
+    }, []);
 
     // Save chat to localStorage and scroll to bottom
     useEffect(() => {

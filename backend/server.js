@@ -169,6 +169,7 @@ app.post("/webhook", async (req, res) => {
                     if (change.value.messages) {
                         for (const msg of change.value.messages) {
                             const context = msg.context;
+                            console.log("[WEBHOOK DEBUG] Received message context:", JSON.stringify(msg.context));
                             const statuses = change.value.statuses;
 
                             if (statuses) {
@@ -205,8 +206,10 @@ app.post("/webhook", async (req, res) => {
 
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
+                                    console.log(`[SESSION CHECK] Session ${sessionId} has owner IDs: ${session.ownerMessageIds}`);
                                     if (session.ownerMessageIds?.includes(originalMessageId)) {
                                         targetSessionId = sessionId;
+                                        console.log(`[SESSION FOUND] Matching session ${sessionId} for message ${originalMessageId}`);
                                         break;
                                     }
                                 }
@@ -226,10 +229,20 @@ app.post("/webhook", async (req, res) => {
                                         isTemplate: true
                                     };
 
+                                    console.log(`[RELAY] Prepared reply for session ${targetSessionId}:`, JSON.stringify({
+                                        id: replyData.id,
+                                        message: replyData.message,
+                                        customerId: replyData.customerId
+                                    }));
+
                                     session.messages.push(replyData);
                                     session.lastActivity = new Date();
 
-                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
+                                    console.log(`[SOCKET.IO] Emitting to room 'update-${targetSessionId}' with ${session.messages.length} messages`);
+                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages, (err) => {
+                                        if (err) console.error("[SOCKET.IO ERROR]", err);
+                                        else console.log(`[SOCKET.IO ACK] Update sent to ${targetSessionId}`);
+                                    });
                                 }
                             }
                         }
