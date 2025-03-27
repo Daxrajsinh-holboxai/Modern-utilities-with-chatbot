@@ -20,7 +20,14 @@ interface ChatMessage {
 }
 
 const B_url: string = import.meta.env.VITE_URL || "http://localhost:5000";
-const socket = io(B_url);
+const socket = io(B_url, {
+    reconnectionAttempts: 5,
+    timeout: 30000,
+    transports: ["polling", "websocket"], // Try polling first
+    query: {
+      region: "US" // Add geographic marker
+    }
+  });
 
 // Generate a unique ID for messages
 const uuidv4 = () => {
@@ -104,6 +111,16 @@ const Chatbot: React.FC = () => {
             console.log("[SOCKET.IO] Disconnected");
         });
     }, []);
+
+    useEffect(() => {
+        socket.on("reconnect_attempt", (attempt) => {
+          console.warn(`[WS RECONNECT] Attempt ${attempt}`);
+        });
+      
+        socket.on("reconnect_error", (err) => {
+          console.error(`[WS RECONNECT FAIL] ${err.message}`);
+        });
+      }, []);
 
     // Save chat to localStorage and scroll to bottom
     useEffect(() => {

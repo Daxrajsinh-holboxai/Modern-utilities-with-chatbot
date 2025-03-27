@@ -9,7 +9,19 @@ const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*" } });
+const io = socketIo(server, {
+    pingTimeout: 60000, // Increased from default 5000
+    pingInterval: 25000,
+    transports: ["websocket", "polling"], // Force polling first
+    cors: {
+      origin: "*", // Verify your production domains
+      methods: ["GET", "POST"]
+    }
+  });
+  
+  console.log(`[NETWORK] Socket.IO configured with:
+  - Ping Timeout: ${io.engine.opts.pingTimeout}ms
+  - Transports: ${io.engine.opts.transports}`);
 
 app.use(express.json());
 app.use(bodyParser.json());
@@ -272,16 +284,19 @@ function updateMessageStatus(messageId, status) {
 
 // WebSocket enhancements
 io.on("connection", (socket) => {
-    console.log(`[WS] New connection: ${socket.id}`);
+    console.log(`[WS] New connection: ${socket.id} from ${socket.handshake.headers.origin}`);
 
     socket.on("join", (sessionId) => {
         console.log(`[WS] Client joined session: ${sessionId}`);
         socket.join(sessionId);
     });
 
-    socket.on("disconnect", () => {
-        console.log(`[WS] Client disconnected: ${socket.id}`);
+    socket.on("disconnect", (reason) => {
+        console.log(`[WS] Client disconnected: ${socket.id}- ${reason}`);
     });
+    socket.on("error", (err) => {
+        console.error(`[WS ERROR] ${socket.id} - ${err.message}`);
+      });
 });
 
 server.listen(5000, () => console.log(`Server running on ${BACKEND_URL || "http://localhost:5000"}`));
