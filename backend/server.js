@@ -171,11 +171,11 @@ app.post("/handle-template-response", async (req, res) => {
 });
 
 app.get("/webhook", (req, res) => {
-    const mode = req.query["hub.mode"];
+    // const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    if (mode && token) {
+    if (token) {
         if (mode === "subscribe" && token === VERIFY_TOKEN) {
             console.log("[WEBHOOK] Verification successful");
             res.status(200).send(challenge);
