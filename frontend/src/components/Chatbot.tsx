@@ -309,37 +309,4 @@ const Chatbot: React.FC = () => {
     );
 };
 
-export default Chatbot;         placeholder="Type your message..."
-                                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                                className="flex-1 px-2 py-1 text-xs sm:text-sm rounded bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                                disabled={isSending}
-                            />
-
-                            <button
-                                onClick={handleSend}
-                                className="bg-gradient-to-r from-green-400 to-green-600 text-white p-1 sm:p-2 rounded focus:outline-none hover:scale-110 transition-transform"
-                                disabled={isSending}
-                            >
-                                {isSending ? (
-                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                    <Send size={16} />
-                                )}
-                            </button>
-
-                            <button
-                                onClick={clearSession}
-                                className="text-red-400 hover:text-red-600 transition-colors focus:outline-none"
-                                title="Clear Chat"
-                            >
-                                <Trash2 size={20} />
-                            </button>
-                        </div>
-                    </motion.div>
-                )}
-            </div>
-        </section>
-    );
-};
-
 export default Chatbot;
