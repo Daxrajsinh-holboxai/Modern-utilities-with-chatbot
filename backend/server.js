@@ -170,6 +170,25 @@ app.post("/handle-template-response", async (req, res) => {
     }
 });
 
+app.get("/webhook", (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    if (mode && token) {
+        if (mode === "subscribe" && token === VERIFY_TOKEN) {
+            console.log("[WEBHOOK] Verification successful");
+            res.status(200).send(challenge);
+        } else {
+            console.error("[WEBHOOK] Verification failed. Make sure the verify token is correct");
+            res.sendStatus(403);
+        }
+    } else {
+        console.error("[WEBHOOK] Verification failed. Missing mode or token");
+        res.sendStatus(403);
+    }
+});
+
 app.post("/webhook", async (req, res) => {
     const body = req.body;
     console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
