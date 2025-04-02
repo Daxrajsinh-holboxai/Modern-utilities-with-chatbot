@@ -9,7 +9,19 @@ const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*" } });
+const io = socketIo(server, {
+    pingTimeout: 60000, // Increased from default 5000
+    pingInterval: 25000,
+    transports: ["websocket", "polling"], // Force polling first
+    cors: {
+      origin: "*", // Verify your production domains
+      methods: ["GET", "POST"]
+    }
+  });
+  
+  console.log(`[NETWORK] Socket.IO configured with:
+  - Ping Timeout: ${io.engine.opts.pingTimeout}ms
+  - Transports: ${io.engine.opts.transports}`);
 
 app.use(express.json());
 app.use(bodyParser.json());
@@ -184,6 +196,7 @@ app.post("/webhook", async (req, res) => {
                     if (change.value.messages) {
                         for (const msg of change.value.messages) {
                             const context = msg.context;
+                            console.log("[WEBHOOK DEBUG] Received message context:", JSON.stringify(msg.context));
                             const statuses = change.value.statuses;
 
                             if (statuses) {
@@ -220,8 +233,10 @@ app.post("/webhook", async (req, res) => {
 
                                 let targetSessionId = null;
                                 for (const [sessionId, session] of userSessions.entries()) {
+                                    console.log(`[SESSION CHECK] Session ${sessionId} has owner IDs: ${session.ownerMessageIds}`);
                                     if (session.ownerMessageIds?.includes(originalMessageId)) {
                                         targetSessionId = sessionId;
+                                        console.log(`[SESSION FOUND] Matching session ${sessionId} for message ${originalMessageId}`);
                                         break;
                                     }
                                 }
@@ -241,10 +256,20 @@ app.post("/webhook", async (req, res) => {
                                         isTemplate: true
                                     };
 
+                                    console.log(`[RELAY] Prepared reply for session ${targetSessionId}:`, JSON.stringify({
+                                        id: replyData.id,
+                                        message: replyData.message,
+                                        customerId: replyData.customerId
+                                    }));
+
                                     session.messages.push(replyData);
                                     session.lastActivity = new Date();
 
-                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
+                                    console.log(`[SOCKET.IO] Emitting to room 'update-${targetSessionId}' with ${session.messages.length} messages`);
+                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages, (err) => {
+                                        if (err) console.error("[SOCKET.IO ERROR]", err);
+                                        else console.log(`[SOCKET.IO ACK] Update sent to ${targetSessionId}`);
+                                    });
                                 }
                             }
                         }
@@ -274,16 +299,19 @@ function updateMessageStatus(messageId, status) {
 
 // WebSocket enhancements
 io.on("connection", (socket) => {
-    console.log(`[WS] New connection: ${socket.id}`);
+    console.log(`[WS] New connection: ${socket.id} from ${socket.handshake.headers.origin}`);
 
     socket.on("join", (sessionId) => {
         console.log(`[WS] Client joined session: ${sessionId}`);
         socket.join(sessionId);
     });
 
-    socket.on("disconnect", () => {
-        console.log(`[WS] Client disconnected: ${socket.id}`);
+    socket.on("disconnect", (reason) => {
+        console.log(`[WS] Client disconnected: ${socket.id}- ${reason}`);
     });
+    socket.on("error", (err) => {
+        console.error(`[WS ERROR] ${socket.id} - ${err.message}`);
+      });
 });
 
 server.listen(5000, () => console.log(`Server running on ${BACKEND_URL || "http://localhost:5000"}`));

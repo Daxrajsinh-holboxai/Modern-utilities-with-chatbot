@@ -20,7 +20,14 @@ interface ChatMessage {
 }
 
 const B_url: string = import.meta.env.VITE_URL || "http://localhost:5000";
-const socket = io(B_url);
+const socket = io(B_url, {
+    reconnectionAttempts: 5,
+    timeout: 30000,
+    transports: ["polling", "websocket"], // Try polling first
+    query: {
+      region: "US" // Add geographic marker
+    }
+  });
 
 // Generate a unique ID for messages
 const uuidv4 = () => {
@@ -68,14 +75,21 @@ const Chatbot: React.FC = () => {
             socket.emit("join", sessionId);
 
             const handleUpdate = (newMessages: ChatMessage[]) => {
-                console.log("[FRONTEND] Received update:", newMessages);
+                console.log("[FRONTEND] Received update via socket:", {
+                    newMessagesCount: newMessages.length,
+                    lastMessage: newMessages[newMessages.length - 1]
+                });
+                
                 setChat((prev) => {
                     const merged = [...prev];
                     newMessages.forEach((newMsg) => {
-                        if (newMsg.message?.trim() && !merged.some((m) => m.id === newMsg.id)) {
+                        const exists = merged.some(m => m.id === newMsg.id);
+                        console.log(`[MERGE] Checking message ${newMsg.id} (exists: ${exists})`);
+                        if (newMsg.message?.trim() && !exists) {
                             merged.push(newMsg);
                         }
                     });
+                    console.log("[MERGE] New chat state:", merged);
                     return merged;
                 });
                 setAwaitingReply(false);
@@ -88,6 +102,25 @@ const Chatbot: React.FC = () => {
             };
         }
     }, [sessionId]);
+
+    useEffect(() => {
+        socket.on("connect", () => {
+            console.log("[SOCKET.IO] Connected with ID:", socket.id);
+        });
+        socket.on("disconnect", () => {
+            console.log("[SOCKET.IO] Disconnected");
+        });
+    }, []);
+
+    useEffect(() => {
+        socket.on("reconnect_attempt", (attempt) => {
+          console.warn(`[WS RECONNECT] Attempt ${attempt}`);
+        });
+      
+        socket.on("reconnect_error", (err) => {
+          console.error(`[WS RECONNECT FAIL] ${err.message}`);
+        });
+      }, []);
 
     // Save chat to localStorage and scroll to bottom
     useEffect(() => {
