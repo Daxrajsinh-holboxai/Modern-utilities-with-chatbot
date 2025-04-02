@@ -158,6 +158,21 @@ app.post("/handle-template-response", async (req, res) => {
     }
 });
 
+app.get('/webhook', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+  
+    if (mode && token) {
+      if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+        console.log('WEBHOOK_VERIFIED');
+        res.status(200).send(challenge);
+      } else {
+        res.sendStatus(403);
+      }
+    }
+  });
+
 app.post("/webhook", async (req, res) => {
     const body = req.body;
     console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
@@ -222,90 +237,13 @@ app.post("/webhook", async (req, res) => {
                                         status: "delivered",
                                         customerId: session.customerId,
                                         sessionId: targetSessionId,
-                                        inReplyTo: originalMessageId
+                                        inReplyTo: originalMessageId,
+                                        isTemplate: true
                                     };
 
-                                    // Store reply with original message context
                                     session.messages.push(replyData);
                                     session.lastActivity = new Date();
 
-                                    // Notify all clients
-                                    io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
-                                    console.log(`[SOCKET] Emitted update to session ${targetSessionId}`);
-                                } else {
-                                    console.warn(`[WARNING] No session found for message ID: ${originalMessageId}`);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        res.sendStatus(200);
-    } catch (error) {
-        console.error("[WEBHOOK ERROR]", error);
-        res.status(500).send("Webhook processing failed");
-    }
-});
-
-// Enhanced webhook handler with delivery status (POST method...)
-app.post("/webhook", async (req, res) => {
-    const body = req.body;
-    console.log("[WEBHOOK] Received event:", JSON.stringify(body, null, 2));
-
-    try {
-        if (body.object && body.entry) {
-            for (const entry of body.entry) {
-                for (const change of entry.changes) {
-                    if (change.value.messages) {
-                        for (const msg of change.value.messages) {
-                            const context = msg.context;
-                            const statuses = change.value.statuses;
-
-                            if (statuses) {
-                                // Handle message status updates
-                                for (const status of statuses) {
-                                    console.log(`[STATUS] Message ${status.id} status: ${status.status}`);
-                                    updateMessageStatus(status.id, status.status);
-                                }
-                            }
-
-                            if (context) {
-                                // Handle owner replies
-                                const originalMessageId = context.id;
-                                const replyMessage = msg.text.body;
-
-                                console.log(`[INCOMING] Reply received for message ${originalMessageId}`);
-
-                                let targetSessionId = null;
-                                for (const [sessionId, session] of userSessions.entries()) {
-                                    if (session.ownerMessageIds?.includes(originalMessageId)) {
-                                        targetSessionId = sessionId;
-                                        break;
-                                    }
-                                }
-
-                                if (targetSessionId) {
-                                    const session = userSessions.get(targetSessionId);
-                                    const replyData = {
-                                        id: uuidv4(),
-                                        message: replyMessage,
-                                        timestamp: new Date(),
-                                        status: "delivered",
-                                        customerId: session.customerId,
-                                        sessionId: targetSessionId,
-                                        inReplyTo: originalMessageId
-                                    };
-
-                                    // Store reply with original message context
-                                    session.messages = session.messages.map(msg => {
-                                        if (msg.id === originalMessageId) {
-                                            return { ...msg, reply: replyData };
-                                        }
-                                        return msg;
-                                    });
-
-                                    // Notify all clients
                                     io.to(targetSessionId).emit(`update-${targetSessionId}`, session.messages);
                                 }
                             }
