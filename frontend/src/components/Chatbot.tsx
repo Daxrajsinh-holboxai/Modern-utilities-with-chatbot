@@ -23,7 +23,7 @@ const B_url: string = import.meta.env.VITE_URL || "http://localhost:5000";
 const socket = io(B_url, {
     reconnectionAttempts: 5,
     timeout: 30000,
-    transports: ["polling", "websocket"], // Try polling first
+    transports: ["websocket", "polling"],
     query: {
       region: "US" // Add geographic marker
     }
@@ -112,6 +112,32 @@ const Chatbot: React.FC = () => {
         });
     }, []);
 
+    // In the useEffect handling socket connections
+useEffect(() => {
+    const handleReconnect = () => {
+      if (sessionId) {
+        console.log(`[FRONTEND] Rejoining session ${sessionId} after reconnect`);
+        socket.emit("join", sessionId);
+      }
+    };
+  
+    socket.on("connect", handleReconnect);
+    return () => {
+      socket.off("connect", handleReconnect);
+    };
+  }, [sessionId]); // Add this effect
+
+  // Inside the main useEffect
+useEffect(() => {
+    socket.on("connect_error", (err) => {
+      console.error(`[SOCKET.IO] Connection error: ${err.message}`);
+    });
+    
+    socket.io.on("reconnect_attempt", (attempt) => {
+      console.log(`[SOCKET.IO] Attempting reconnect (${attempt})`);
+    });
+  }, []);
+
     useEffect(() => {
         socket.on("reconnect_attempt", (attempt) => {
           console.warn(`[WS RECONNECT] Attempt ${attempt}`);
@@ -127,6 +153,16 @@ const Chatbot: React.FC = () => {
         localStorage.setItem("chat", JSON.stringify(chat));
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [chat]);
+
+    // In the initial session check
+    useEffect(() => {
+        const savedSessionId = localStorage.getItem("sessionId");
+        if (savedSessionId) {
+        // Explicitly re-join the room when using a persisted session
+        socket.emit("join", savedSessionId);
+        console.log(`[FRONTEND] Rejoined persisted session ${savedSessionId}`);
+        }
+    }, []);
 
     // Auto-open chat on page load with animation
     useEffect(() => {
